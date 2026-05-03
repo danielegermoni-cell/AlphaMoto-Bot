@@ -4,3 +4,4 @@ yfinance
 pyTelegramBotAPI
 python-dotenv
 alpaca-trade-api
+alpha_vantage==2.3.1
