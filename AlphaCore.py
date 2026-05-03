@@ -1,5 +1,5 @@
 import yfinance as yf
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_file
 from flask_cors import CORS
 import threading
 import time
@@ -179,6 +179,7 @@ def update_logic():
         time.sleep(60)
 
 # --- API DASHBOARD WEB ---
+# --- API DASHBOARD WEB ---
 @app.route('/api/state')
 def get_state():
     with state_lock:
@@ -187,8 +188,15 @@ def get_state():
         state_copy["invested"] = state_copy.get("total_equity", 0.0) - state_copy.get("cash", 0.0)
         return jsonify(state_copy)
 
+# --- INTERFACCIA WEB (IL PONTE) ---
+@app.route('/')
+def home():
+    return send_file('Alphamoto.html')
+
 if __name__ == '__main__':
     threading.Thread(target=update_logic, daemon=True).start()
     threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
-    print("🚀 AlphaMoto Core 4.2 Avviato su http://127.0.0.1:5000")
-    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+    print("🚀 AlphaMoto Cloud Core Avviato!")
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
