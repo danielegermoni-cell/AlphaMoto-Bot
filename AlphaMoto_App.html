@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlphaMoto | Modern Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --success: #10b981;
+            --success-bg: rgba(16, 185, 129, 0.15);
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.15);
+            --warning: #f59e0b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Poppins', sans-serif;
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .live-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--card-bg);
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse 1.5s infinite;
+        }
+
+        .top-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 20px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(90deg, var(--accent), transparent);
+            opacity: 0.5;
+        }
+
+        .card-title {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+        }
+
+        /* GRIGLIA MODIFICATA: 2 parti a sinistra (Grafico), 1 parte a destra (Dati) */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+            flex: 1;
+        }
+
+        /* TESTO TICKER RIMPICCIOLITO */
+        .active-ticker {
+            font-size: 2rem; 
+            font-weight: 700;
+            color: var(--accent);
+            text-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        /* TV CHART CONTAINER PIÙ ALTO E LARGO */
+        .tv-container {
+            flex: 1;
+            min-height: 520px; 
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 15px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .ai-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .badge {
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .badge.buy { background: var(--success-bg); color: var(--success); }
+        .badge.sell { background: var(--danger-bg); color: var(--danger); }
+        .badge.neutral { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { text-align: left; color: var(--text-muted); font-size: 0.85rem; padding-bottom: 10px;}
+        td { padding: 10px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.95rem;}
+        .growth-pill { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+        .growth-pill.up { background: var(--success-bg); color: var(--success); }
+        .growth-pill.down { background: var(--danger-bg); color: var(--danger); }
+
+        .log-box {
+            background-color: #0f172a;
+            border-radius: 12px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 1rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .log-entry { margin-bottom: 10px; font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 10px; }
+        .log-time { color: var(--accent); font-weight: 500; }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">🏍️ AlphaMoto</div>
+        <div class="live-status" id="conn-status">
+            <div class="pulse-dot"></div> Sincronizzato con Alpaca API
+        </div>
+    </header>
+
+    <div class="top-cards">
+        <div class="card">
+            <div class="card-title">Patrimonio Totale</div>
+            <div class="card-value" id="val-wallet">$0.00</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Capitale Investito</div>
+            <div class="card-value" id="val-invested">$0.00</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Liquidità Libera (Cash)</div>
+            <div class="card-value" id="val-cash">$0.00</div>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <!-- LATO SINISTRO: TradingView Integrato (Ora più largo) -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="card-title" style="margin-bottom: 0;">Posizione Attiva</div>
+                <div class="active-ticker" id="val-asset">LIQUIDO</div>
+            </div>
+            
+            <!-- CONTENITORE TRADINGVIEW -->
+            <div class="tv-container" id="tv-widget-container">
+                <!-- Il grafico apparirà qui in automatico -->
+            </div>
+        </div>
+
+        <!-- LATO DESTRO: Radar, AI e Log (Ora più stretti) -->
+        <div class="right-col">
+            
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-title">Motore Decisionale (AI)</div>
+                <div class="ai-row">
+                    <span>Verdetto Istituzionale</span>
+                    <span class="badge neutral" id="val-verdict">ATTESA DATI</span>
+                </div>
+                <div class="ai-row" style="border: none;">
+                    <span>Rischio Macroeconomico</span>
+                    <span class="badge buy" id="val-risk">ATTESA DATI</span>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-title">Radar Strategico (Swing 5D)</div>
+                <table>
+                    <tbody id="table-body">
+                        <!-- Generato dal JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <div class="card-title">System Logs</div>
+                <div class="log-box" id="log-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChartSymbol = "";
+
+        function formatMoney(amount) {
+            return '$' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+
+        function updateTradingViewChart(symbol) {
+            let chartSymbol = (symbol === "LIQUIDO" || symbol === "STANDBY") ? "SPY" : symbol;
+            
+            if (chartSymbol !== currentChartSymbol) {
+                currentChartSymbol = chartSymbol;
+                const container = document.getElementById('tv-widget-container');
+                container.innerHTML = `
+                    <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_1&symbol=${chartSymbol}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Europe%2FRome&withdateranges=1&showpopupbutton=0&locale=it" 
+                    style="width: 100%; height: 100%; border: none;"></iframe>
+                `;
+            }
+        }
+
+        async function updateDashboard() {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/state');
+                const data = await response.json();
+
+                document.getElementById('val-wallet').textContent = formatMoney(data.wallet || 0);
+                document.getElementById('val-invested').textContent = formatMoney(data.invested || 0);
+                document.getElementById('val-cash').textContent = formatMoney(data.cash || 0);
+
+                const asset = data.current_asset || "LIQUIDO";
+                document.getElementById('val-asset').textContent = asset;
+                updateTradingViewChart(asset);
+
+                const v = data.institutional_verdict || "NEUTRAL";
+                const r = data.bridgewater_risk || "SAFE";
+                document.getElementById('val-verdict').textContent = v;
+                document.getElementById('val-verdict').className = 'badge ' + (v.includes('BUY') ? 'buy' : v.includes('SELL') ? 'sell' : 'neutral');
+                document.getElementById('val-risk').textContent = r;
+                document.getElementById('val-risk').className = 'badge ' + (r.includes('HIGH') ? 'sell' : 'buy');
+
+                const tbody = document.getElementById('table-body');
+                tbody.innerHTML = '';
+                if(data.assets_data && data.assets_data.length > 0) {
+                    data.assets_data.forEach(item => {
+                        const tr = document.createElement('tr');
+                        const isUp = item.growth > 0;
+                        tr.innerHTML = `
+                            <td style="font-weight: 600;">${item.id}</td>
+                            <td>$${item.price.toFixed(2)}</td>
+                            <td style="text-align: right;">
+                                <span class="growth-pill ${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${item.growth.toFixed(2)}%</span>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color: var(--text-muted); padding: 20px;">Mercato Chiuso / Attesa dati...</td></tr>`;
+                }
+
+                const logContainer = document.getElementById('log-container');
+                logContainer.innerHTML = '';
+                if(data.log) {
+                    data.log.forEach(msg => {
+                        let time = "", text = msg;
+                        const match = msg.match(/^\[(.*?)\] (.*)/);
+                        if(match) { time = match[1]; text = match[2]; }
+                        const div = document.createElement('div');
+                        div.className = 'log-entry';
+                        div.innerHTML = time ? `<span class="log-time">${time}</span> <span>${text}</span>` : `<span>${text}</span>`;
+                        logContainer.appendChild(div);
+                    });
+                }
+
+            } catch (error) {
+                document.getElementById('conn-status').innerHTML = `<div class="pulse-dot" style="background: var(--danger); animation: none;"></div> Offline`;
+            }
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 5000);
+    </script>
+</body>
+</html>

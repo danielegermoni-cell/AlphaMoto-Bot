@@ -1,0 +1,6 @@
+Flask
+flask-cors
+yfinance
+pyTelegramBotAPI
+python-dotenv
+alpaca-trade-api
