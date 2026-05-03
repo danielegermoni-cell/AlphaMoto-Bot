@@ -273,9 +273,9 @@
 
         async function updateDashboard() {
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/state');
+                const response = await fetch('/api/state');
                 const data = await response.json();
-
+                
                 document.getElementById('val-wallet').textContent = formatMoney(data.wallet || 0);
                 document.getElementById('val-invested').textContent = formatMoney(data.invested || 0);
                 document.getElementById('val-cash').textContent = formatMoney(data.cash || 0);
