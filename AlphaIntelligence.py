@@ -6,7 +6,7 @@ class AlphaIntelligence:
     def __init__(self, historical_data):
         self.data = historical_data
         # Inizializza il client Cloud Groq
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = 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
 
     def get_institutional_verdict(self):
         try:
