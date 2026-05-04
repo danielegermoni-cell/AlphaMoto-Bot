@@ -1,4 +1,5 @@
-```pithon
+
+```python
 import os
 from groq import Groq
 
