@@ -1,45 +1,40 @@
-import pandas as pd
-import numpy as np
+```pithon
+import os
+from groq import Groq
 
-class AlphaIntelligence: # <--- QUESTA RIGA È FONDAMENTALE
-    def __init__(self, ticker_data):
-        self.data = ticker_data
+class AlphaIntelligence:
+    def __init__(self, historical_data):
+        self.data = historical_data
+        # Inizializza il client Cloud Groq
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    # --- MODULO CITADEL (Analisi Tecnica) ---
-    def get_citadel_score(self):
-        try:
-            delta = self.data['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            last_rsi = rsi.iloc[-1]
-            return 1 if last_rsi < 40 else (-1 if last_rsi > 70 else 0)
-        except:
-            return 0
-
-    # --- MODULO BRIDGEWATER (Rischio) ---
-    def get_bridgewater_risk(self):
-        try:
-            volatility = self.data['Close'].pct_change().std() * np.sqrt(252)
-            return "HIGH_RISK" if volatility > 0.35 else "SAFE"
-        except:
-            return "SAFE"
-
-    # --- MODULO RENAISSANCE (Statistica) ---
-    def get_renaissance_edge(self):
-        try:
-            monthly_return = (self.data['Close'].iloc[-1] / self.data['Close'].iloc[-20]) - 1
-            return 1 if monthly_return > 0 else 0
-        except:
-            return 0
-
-    # --- VERDETTO FINALE ---
     def get_institutional_verdict(self):
-        score = self.get_citadel_score() + self.get_renaissance_edge()
-        if score >= 1:
-            return "STRONG_BUY"
-        elif score <= -1:
-            return "SELL/SWAP_TO_GOLD"
-        else:
+        try:
+            prompt = f"""
+            Agisci come un analista quantitativo istituzionale.
+            Ecco gli ultimi dati di chiusura dell'asset:
+            {self.data['Close'].tail(5).to_string()}
+            
+            Analizza il trend. Rispondi SOLO con una di queste parole esatte:
+            STRONG_BUY, BUY, NEUTRAL, SELL, SELL/SWAP_TO_GOLD.
+            Non aggiungere spiegazioni.
+            """
+            
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192", # Modello potentissimo di Meta
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            response = chat_completion.choices[0].message.content.strip().upper()
+            
+            valid_responses = ["STRONG_BUY", "BUY", "NEUTRAL", "SELL", "SELL/SWAP_TO_GOLD"]
+            for r in valid_responses:
+                if r in response:
+                    return r
             return "NEUTRAL"
+        except Exception as e:
+            print(f"Errore Groq Verdict: {e}")
+  
+...
