@@ -51,8 +51,12 @@ def send_telegram(msg):
         bot.send_message(CHAT_ID, f"🚀 *AlphaMoto Intelligence*\n\n{msg}", parse_mode='Markdown')
     except Exception as e: print(f"Errore Telegram: {e}")
 
-# --- COMANDI TELEGRAM ---
-@bot.message_handler(commands=['status', 'start'])
+# --- COMANDI TELEGRAM INTERATTIVI ---
+@bot.message_handler(commands=['info', 'report', 'stato', 'status'])
+@bot.message_handler(func=lambda message: message.text and message.text.lower().strip() in ['info', 'report', 'stato', 'status'])
+def send_realtime_report(message):
+    try:
+        # TEST DI DEBUG: Facciamo dire al bot il tuo ID
 def handle_status(message):
     if str(message.chat.id) == CHAT_ID:
         equity, cash = broker.get_real_portfolio_value()
