@@ -57,21 +57,39 @@ def send_telegram(msg):
 def send_realtime_report(message):
     try:
         # TEST DI DEBUG: Facciamo dire al bot il tuo ID
-def handle_status(message):
-    if str(message.chat.id) == CHAT_ID:
-        equity, cash = broker.get_real_portfolio_value()
-        current_asset = broker.get_open_position() or "LIQUIDO"
+        mio_id = str(message.chat.id)
+        id_salvato = str(os.getenv("TELEGRAM_CHAT_ID"))
         
-        msg = f"📊 *REPORT LIVE*\n\n"
-        msg += f"💰 *Capitale:* ${round(equity, 2)}\n"
-        msg += f"💵 *In Cassa:* ${round(cash, 2)}\n"
-        msg += f"🏦 *Asset:* {current_asset}\n\n"
+        # Se gli ID non combaciano, facciamoglielo dire!
+        if mio_id != id_salvato:
+            bot.reply_to(message, f"⛔ Accesso Negato.\nIl tuo ID: {mio_id}\nID Autorizzato: {id_salvato}")
+            return
+
+        with state_lock:
+            wallet = state.get("total_equity", 0.0)
+            cash = state.get("cash", 0.0)
+            invested = wallet - cash
+            asset = state.get("current_asset", "Nessuno")
+            verdict = state.get("ai_verdict", "Nessuno")
+            status = state.get("status", "In attesa")
+
+        testo_report = f"""
+📊 *REPORT IN TEMPO REALE* 📊
+
+💰 *Capitale Totale:* ${wallet:.2f}
+💵 *Liquidità Disponibile:* ${cash:.2f}
+📈 *Capitale Investito:* ${invested:.2f}
+
+🎯 *Asset in Focus:* {asset}
+🧠 *Verdetto AI:* {verdict}
+🚦 *Stato Bot:* {status}
+        """
         
-        if not broker.is_market_open():
-            msg += f"💤 _Status: Mercato Chiuso_"
-        else:
-            msg += f"🕒 _Aggiornato alle {time.strftime('%H:%M:%S')}_"
-            bot.reply_to(message, msg, parse_mode='Markdown')
+        bot.send_message(message.chat.id, testo_report, parse_mode="Markdown")
+
+    except Exception as e:
+        # Se il codice va in crash, facciamoci mandare l'errore su Telegram!
+        bot.reply_to(message, f"❌ Errore nel generare il report: {str(e)}")
 
 # --- MOTORE CENTRALE ---
 def update_logic():
