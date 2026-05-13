@@ -16,6 +16,9 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
+@app.route('/')
+def home():
+    return "AlphaMoto Server Sveglio e Operativo", 200
 CORS(app)
 broker = AlpacaBroker()
 
