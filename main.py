@@ -1,5 +1,12 @@
 """
-AlphaMoto v6.1 — Refactor architetturale.
+AlphaMoto v6.1.1 — Refactor architetturale.
+
+Changelog v6.1.1 (fix minori/display):
+  - growth "5D" ora copre davvero 5 intervalli di seduta (iloc[-6]);
+  - _resolve_entry_price(): entry price a 3 livelli (Alpaca → ultimo trade
+    → prezzo analisi), mai più 0.0 in cache dopo uno swap;
+  - _gold_fallback(): il target GLD d'emergenza fuori perf_list ha prezzo
+    live dal market data invece di 0.0 hardcodato.
 
 I 4 pilastri implementati:
 
@@ -374,7 +381,9 @@ def analyze_assets():
 
             closes = hist['Close']
             curr   = float(latest.get(ticker, closes.iloc[-1]))
-            ref    = float(closes.iloc[-5]) if len(closes) >= 5 else float(closes.iloc[0])
+            # FIX v6.1.1: "5D" = 5 intervalli di seduta → riferimento a iloc[-6].
+            # Il vecchio iloc[-5] copriva solo 4 intervalli (label errata del 20%).
+            ref    = float(closes.iloc[-6]) if len(closes) >= 6 else float(closes.iloc[0])
             growth_5d = ((curr - ref) / ref) * 100
 
             summary = AlphaIntelligence(hist).get_summary()
@@ -604,6 +613,41 @@ def check_partial_profit(active_ticker, pos_details):
 # ESECUZIONE TRADE (sequenze atomiche sotto trade_lock)
 # ══════════════════════════════════════════════════════════════════════
 
+def _resolve_entry_price(symbol, fallback_price):
+    """
+    FIX v6.1.1 — entry price per la cache dashboard, in ordine di affidabilità:
+      1. avg_entry_price della posizione reale su Alpaca;
+      2. ultimo trade dal market data (se la posizione non è ancora leggibile);
+      3. prezzo teorico dell'analisi (può essere 0.0 solo nel caso limite del
+         fallback GLD d'emergenza costruito a rete completamente giù).
+    Solo display: nessuna decisione di trading legge questo valore.
+    """
+    details = broker.get_position_details(symbol)
+    if details and details.get("avg_entry", 0.0) > 0.0:
+        return details["avg_entry"]
+    try:
+        live = (broker.get_latest_prices([symbol]) or {}).get(symbol)
+        if live and float(live) > 0.0:
+            return float(live)
+    except Exception:
+        pass
+    return fallback_price
+
+
+def _gold_fallback():
+    """
+    FIX v6.1.1 — target GLD quando manca dalla perf_list (es. barre non
+    disponibili). Il prezzo viene chiesto al market data live invece di
+    essere hardcodato a 0.0, così la dashboard non mostra 'Entry: —'.
+    """
+    price = 0.0
+    try:
+        price = float((broker.get_latest_prices(["GLD"]) or {}).get("GLD", 0.0))
+    except Exception:
+        pass
+    return {"id": "GLD", "price": round(price, 2), "size_mult": 0.95}
+
+
 def execute_entry(best, cash):
     size_mult = best.get("size_mult", 0.90)
     buy_power = cash * 0.95 * size_mult
@@ -612,10 +656,9 @@ def execute_entry(best, cash):
     if not success:
         return False
     # Entry price REALE da Alpaca, non il prezzo teorico dell'analisi
-    details = broker.get_position_details(best["id"])
     store.update({
         "current_asset": best["id"],
-        "entry_price":   details["avg_entry"] if details else best["price"],
+        "entry_price":   _resolve_entry_price(best["id"], best["price"]),
     }, log_msg=f"🎯 ACQUISTO: {best['id']} Score:{best['score']} Verdict:{best['verdict']}")
     store.increment("operations_today")
     send_telegram(
@@ -642,11 +685,10 @@ def execute_swap(active_ticker, target, reason_log, telegram_msg):
         send_telegram(f"⚠️ Swap incompleto: `{active_ticker}` venduto ma acquisto `{target['id']}` fallito. Portafoglio LIQUIDO.")
         return False
 
-    details = broker.get_position_details(target["id"])
     store.mutate(lambda s: s["partial_profit_done"].pop(active_ticker, None))
     store.update({
         "current_asset": target["id"],
-        "entry_price":   details["avg_entry"] if details else target["price"],
+        "entry_price":   _resolve_entry_price(target["id"], target["price"]),
     }, log_msg=reason_log)
     store.increment("operations_today")
     send_telegram(telegram_msg)
@@ -882,8 +924,8 @@ def update_logic():
                     )
 
                     if emergency_gold:
-                        gold = next((x for x in perf_list if x["id"] == "GLD"),
-                                    {"id": "GLD", "price": 0.0, "size_mult": 0.95})
+                        gold = (next((x for x in perf_list if x["id"] == "GLD"), None)
+                                or _gold_fallback())
                         execute_swap(
                             active_ticker, gold,
                             reason_log=f"⚠️ SWAP EMERGENZA → GLD (risk: {active_data.get('risk')})",

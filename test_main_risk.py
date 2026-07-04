@@ -362,3 +362,103 @@ class TestEngineStartup:
         monkeypatch.setattr(main, "_acquire_engine_lock", lambda: False)
         main.start_background_engine()
         assert started_targets == []
+
+
+# ---------------------------------------------------------------------------
+# FIX v6.1.1 — growth 5D su 5 intervalli reali (analyze_assets)
+# ---------------------------------------------------------------------------
+
+class TestGrowth5D:
+    @staticmethod
+    def _bars(closes):
+        import pandas as pd
+        n = len(closes)
+        return pd.DataFrame({
+            "Open":   closes,
+            "High":   [c * 1.01 for c in closes],
+            "Low":    [c * 0.99 for c in closes],
+            "Close":  closes,
+            "Volume": [1_000_000] * n,
+        })
+
+    def test_growth_usa_cinque_intervalli(self, monkeypatch):
+        """
+        60 barre piatte a 100, poi le ultime 6 chiusure note:
+        ref deve essere iloc[-6] (=100), NON iloc[-5] (=104).
+        Con ultimo prezzo live 110 → growth atteso +10%, non +5.77%.
+        """
+        closes = [100.0] * 55 + [104.0, 105.0, 106.0, 107.0, 108.0]  # 60 barre
+        assert len(closes) == 60
+        bars = self._bars(closes)
+
+        monkeypatch.setattr(main, "ASSETS", ["SPY"])
+        monkeypatch.setattr(main.broker, "get_daily_bars",
+                            lambda syms, lookback_days=150: {"SPY": bars})
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: {"SPY": 110.0})
+
+        perf = main.analyze_assets()
+        assert len(perf) == 1
+        # ref = iloc[-6] = 100.0 → (110-100)/100 = +10.00%
+        assert perf[0]["growth"] == pytest.approx(10.0, abs=0.01)
+
+    def test_growth_non_usa_quattro_intervalli(self, monkeypatch):
+        """Anti-regressione esplicita: il valore da iloc[-5] sarebbe diverso."""
+        closes = [100.0] * 54 + [90.0, 104.0, 105.0, 106.0, 107.0, 108.0]
+        bars = self._bars(closes)
+        monkeypatch.setattr(main, "ASSETS", ["SPY"])
+        monkeypatch.setattr(main.broker, "get_daily_bars",
+                            lambda syms, lookback_days=150: {"SPY": bars})
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: {"SPY": 108.0})
+        perf = main.analyze_assets()
+        # ref corretto = iloc[-6] = 90 → +20%; il vecchio bug (iloc[-5]=104) darebbe +3.85%
+        assert perf[0]["growth"] == pytest.approx(20.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# FIX v6.1.1 — entry price mai 0.0 e fallback GLD con prezzo live
+# ---------------------------------------------------------------------------
+
+class TestResolveEntryPrice:
+    def test_livello_1_avg_entry_da_alpaca(self, monkeypatch):
+        monkeypatch.setattr(main.broker, "get_position_details",
+                            lambda sym: {"avg_entry": 123.45})
+        assert main._resolve_entry_price("GLD", 0.0) == 123.45
+
+    def test_livello_2_ultimo_trade_se_posizione_illeggibile(self, monkeypatch):
+        monkeypatch.setattr(main.broker, "get_position_details", lambda sym: None)
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: {"GLD": 250.10})
+        assert main._resolve_entry_price("GLD", 0.0) == pytest.approx(250.10)
+
+    def test_livello_3_prezzo_analisi_come_ultima_spiaggia(self, monkeypatch):
+        monkeypatch.setattr(main.broker, "get_position_details", lambda sym: None)
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: (_ for _ in ()).throw(RuntimeError("rete giù")))
+        assert main._resolve_entry_price("SPY", 99.9) == 99.9
+
+    def test_avg_entry_zero_non_viene_accettato(self, monkeypatch):
+        """Un avg_entry a 0.0 (lettura anomala) deve far scattare il livello 2."""
+        monkeypatch.setattr(main.broker, "get_position_details",
+                            lambda sym: {"avg_entry": 0.0})
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: {"SPY": 501.0})
+        assert main._resolve_entry_price("SPY", 0.0) == pytest.approx(501.0)
+
+
+class TestGoldFallback:
+    def test_prezzo_live_dal_market_data(self, monkeypatch):
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: {"GLD": 251.37})
+        gold = main._gold_fallback()
+        assert gold["id"] == "GLD"
+        assert gold["price"] == pytest.approx(251.37)
+        assert gold["size_mult"] == 0.95
+
+    def test_rete_giu_ritorna_comunque_un_target_valido(self, monkeypatch):
+        monkeypatch.setattr(main.broker, "get_latest_prices",
+                            lambda syms: (_ for _ in ()).throw(RuntimeError("rete giù")))
+        gold = main._gold_fallback()
+        assert gold["id"] == "GLD"
+        assert gold["price"] == 0.0  # caso limite documentato: swap procede comunque
