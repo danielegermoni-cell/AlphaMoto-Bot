@@ -920,12 +920,76 @@ def health():
     return jsonify({"status": "ok", "ts": int(time.time())}), 200
 
 # ══════════════════════════════════════════════════════════════════════
-# ENTRYPOINT
+# AVVIO MOTORE (trading loop + Telegram) — a livello di modulo
 # ══════════════════════════════════════════════════════════════════════
+# FIX CRITICO: con `gunicorn main:app`, questo modulo viene IMPORTATO
+# (non eseguito come script), quindi `__name__` non è mai '__main__'. Il
+# vecchio codice avviava i thread di trading e Telegram SOLO dentro quel
+# blocco: su un deploy gunicorn il bot serviva la dashboard ma non tradava
+# né rispondeva su Telegram — senza nessun errore visibile nei log.
+#
+# Ora l'avvio del motore è una funzione a sé, richiamata SEMPRE al
+# caricamento del modulo (sia sotto gunicorn sia con `python main.py`).
+# Un lock su file (flock) garantisce che, anche con più worker/processi
+# gunicorn, il motore parta una sola volta: gli altri worker servono solo
+# richieste HTTP. Con un solo worker (oggi il default su Render) il lock
+# è comunque innocuo — costa un file aperto in più.
+
+try:
+    import fcntl
+    _HAS_FLOCK = True
+except ImportError:
+    # Piattaforme senza flock (es. sviluppo locale su Windows): nessuna
+    # protezione multi-processo, ma il motore può comunque partire.
+    _HAS_FLOCK = False
+
+_ENGINE_LOCK_PATH = os.path.join(os.getenv("TMPDIR", "/tmp"), "alphamoto_engine.lock")
+_engine_lock_fh   = None  # tenuto aperto per tutta la vita del processo: il lock si rilascia da solo alla sua chiusura
+
+
+def _acquire_engine_lock():
+    """True se QUESTO processo ha in mano il lock esclusivo del motore."""
+    global _engine_lock_fh
+    if not _HAS_FLOCK:
+        return True
+    try:
+        fh = open(_ENGINE_LOCK_PATH, "w")
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _engine_lock_fh = fh
+        return True
+    except (IOError, OSError):
+        return False
+
+
+def start_background_engine():
+    """
+    Avvia il loop di trading e il polling Telegram UNA sola volta per
+    container, indipendentemente da come il processo è stato lanciato.
+    """
+    if not _acquire_engine_lock():
+        print("ℹ️ Motore già avviato da un altro worker in questo container — questo processo serve solo la dashboard.")
+        return
+    threading.Thread(target=update_logic, daemon=True, name="alphamoto-trading-loop").start()
+    if bot:
+        threading.Thread(target=lambda: bot.infinity_polling(), daemon=True, name="alphamoto-telegram-poll").start()
+    print("🚀 Motore di trading + bot Telegram avviati.")
+
+
+# Interruttore esplicito per test/tooling che importano main.py senza voler
+# avviare il motore reale (impostato da tests/conftest.py). In produzione
+# questa variabile non è definita, quindi il motore parte sempre.
+if os.getenv("ALPHAMOTO_DISABLE_ENGINE", "") != "1":
+    start_background_engine()
+else:
+    print("⏸️ ALPHAMOTO_DISABLE_ENGINE=1 — motore non avviato (import per test/tooling).")
+
+# ══════════════════════════════════════════════════════════════════════
+# ENTRYPOINT — solo per l'esecuzione diretta (`python main.py`)
+# ══════════════════════════════════════════════════════════════════════
+# Con gunicorn questo blocco non gira mai: il server HTTP è gunicorn stesso.
+# Con `python main.py` serve comunque un server: qui usiamo il dev server
+# Flask, che per un solo utente (dashboard personale) è sufficiente.
 
 if __name__ == '__main__':
-    threading.Thread(target=update_logic, daemon=True).start()
-    if bot:
-        threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
     print("🚀 AlphaMoto Core v6.1 avviato su http://0.0.0.0:5000")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)

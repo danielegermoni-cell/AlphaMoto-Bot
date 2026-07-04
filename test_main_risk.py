@@ -2,6 +2,8 @@
 Regression test sulle funzioni di risk management di main.py (v6.1, Fase 1.2 e 1.3).
 Il broker viene monkeypatchato: nessuna rete, nessun Telegram (TOKEN assente → bot=None).
 """
+import threading
+
 import pytest
 
 import main
@@ -263,3 +265,76 @@ class TestColdStartHold:
         main.store.update({"cold_start_hold": True})  # check_stop_loss sopra non lo tocca, ma per chiarezza
         monkeypatch.setattr(main.broker, "get_daily_start_equity", lambda: 1000.0)
         assert main.check_circuit_breaker(890.0, "SPY") is True
+
+
+# ---------------------------------------------------------------------------
+# FIX CRITICO — avvio del motore compatibile con gunicorn (module-level)
+# ---------------------------------------------------------------------------
+
+class TestEngineStartup:
+    def test_motore_non_si_avvia_automaticamente_durante_i_test(self):
+        """
+        REGRESSIONE: conftest.py imposta ALPHAMOTO_DISABLE_ENGINE=1 PRIMA
+        dell'import di main. Se questo test fallisse, vorrebbe dire che ogni
+        `import main` nella suite ha avviato un vero loop di trading in
+        background: esattamente il rischio del fix module-level.
+        """
+        names = [t.name for t in threading.enumerate()]
+        assert "alphamoto-trading-loop" not in names
+        assert "alphamoto-telegram-poll" not in names
+
+    def test_lock_impedisce_la_doppia_acquisizione(self, tmp_path, monkeypatch):
+        """
+        REGRESSIONE del bug gunicorn: con più worker/processi, solo il primo
+        deve poter avviare il motore. Stesso processo, due tentativi di lock
+        sullo stesso file → il secondo deve fallire (flock è per-file-descriptor,
+        non per-processo: due open() distinti competono comunque per il lock).
+        """
+        monkeypatch.setattr(main, "_ENGINE_LOCK_PATH", str(tmp_path / "engine.lock"))
+        try:
+            assert main._acquire_engine_lock() is True
+            assert main._acquire_engine_lock() is False
+        finally:
+            if main._engine_lock_fh:
+                main._engine_lock_fh.close()
+                main._engine_lock_fh = None
+
+    def test_start_background_engine_avvia_il_thread_di_trading(self, tmp_path, monkeypatch):
+        """Con il lock libero, start_background_engine deve avviare il loop."""
+        monkeypatch.setattr(main, "_ENGINE_LOCK_PATH", str(tmp_path / "engine2.lock"))
+        started_targets = []
+
+        class _FakeThread:
+            def __init__(self, target=None, daemon=None, name=None):
+                self.target = target
+                self.name = name
+            def start(self):
+                started_targets.append(self.name)
+
+        monkeypatch.setattr(main.threading, "Thread", _FakeThread)
+        try:
+            main.start_background_engine()
+            assert "alphamoto-trading-loop" in started_targets
+            # main.bot è None nei test (TELEGRAM_TOKEN assente): nessun
+            # secondo thread per il polling.
+            assert "alphamoto-telegram-poll" not in started_targets
+        finally:
+            if main._engine_lock_fh:
+                main._engine_lock_fh.close()
+                main._engine_lock_fh = None
+
+    def test_start_background_engine_non_riparte_se_lock_gia_preso(self, tmp_path, monkeypatch):
+        """Un secondo worker (lock già occupato) non deve avviare nulla."""
+        monkeypatch.setattr(main, "_ENGINE_LOCK_PATH", str(tmp_path / "engine3.lock"))
+        started_targets = []
+
+        class _FakeThread:
+            def __init__(self, target=None, daemon=None, name=None):
+                self.name = name
+            def start(self):
+                started_targets.append(self.name)
+
+        monkeypatch.setattr(main.threading, "Thread", _FakeThread)
+        monkeypatch.setattr(main, "_acquire_engine_lock", lambda: False)
+        main.start_background_engine()
+        assert started_targets == []
