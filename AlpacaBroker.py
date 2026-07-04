@@ -62,6 +62,11 @@ class AlpacaBroker:
         self._clock_cache_lock = threading.Lock()
         self._clock_cache = (0.0, None)  # (timestamp, clock)
 
+        # Cache della baseline di equity giornaliera (get_portfolio_history).
+        # Fase 2 (estensione Source-of-Truth): mai da state.json locale.
+        self._daily_equity_cache_lock = threading.Lock()
+        self._daily_equity_cache = (0.0, None)  # (timestamp, base_value)
+
         try:
             self.api = tradeapi.REST(self.api_key, self.secret_key, self.base_url, api_version='v2')
             account  = self.api.get_account()
@@ -158,6 +163,45 @@ class AlpacaBroker:
         if equity == 0.0:
             raise ValueError("Equity restituita 0.0 — probabile errore di rete, non trading state.")
         return equity, cash
+
+    # Sentinel dedicato: il decorator @retry interpreta fallback=None come
+    # "nessun fallback impostato" e RILANCIA l'eccezione invece di restituire
+    # None (stesso motivo per cui get_position_details, più sotto, gestisce
+    # l'eccezione con un try/except interno anziché affidarsi al decorator).
+    # Qui vogliamo retry REALI con backoff, quindi usiamo un oggetto
+    # sentinella distinguibile da un None legittimo.
+    _NO_RESULT = object()
+
+    @retry(max_attempts=3, backoff=2, fallback=_NO_RESULT)
+    def _fetch_daily_start_equity(self):
+        """Interroga Alpaca per l'equity di apertura giornata (network call, con retry)."""
+        history = self.api.get_portfolio_history(period='1D', timeframe='1Min')
+        base = getattr(history, 'base_value', None)
+        if base is None:
+            raise ValueError("get_portfolio_history non ha restituito base_value.")
+        return float(base)
+
+    def get_daily_start_equity(self, max_age_sec=60):
+        """
+        Equity di apertura giornata SEMPRE da Alpaca (get_portfolio_history →
+        base_value), mai da state.json: un redeploy/riavvio non deve poter
+        alterare la baseline usata dal circuit breaker giornaliero.
+        Cache breve (60s) per non moltiplicare le chiamate REST ad ogni ciclo
+        del loop e ad ogni poll della dashboard.
+        Ritorna None se Alpaca non risponde (dopo i retry) e non c'è nulla in
+        cache fresca — il chiamante decide il fallback degradato.
+        """
+        with self._daily_equity_cache_lock:
+            ts, val = self._daily_equity_cache
+            if val is not None and (time.time() - ts) < max_age_sec:
+                return val
+
+        result = self._fetch_daily_start_equity()
+        val = None if result is self._NO_RESULT else result
+        if val is not None:
+            with self._daily_equity_cache_lock:
+                self._daily_equity_cache = (time.time(), val)
+        return val
 
     @retry(max_attempts=3, backoff=2, fallback=(None, False))
     def get_open_position(self):
