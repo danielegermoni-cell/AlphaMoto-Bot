@@ -462,3 +462,97 @@ class TestGoldFallback:
         gold = main._gold_fallback()
         assert gold["id"] == "GLD"
         assert gold["price"] == 0.0  # caso limite documentato: swap procede comunque
+
+
+# ---------------------------------------------------------------------------
+# FIX v6.1.2 — _telegram_poll_loop non muore più al primo 409 Conflict
+# ---------------------------------------------------------------------------
+
+class _FakeApiTelegramException(Exception):
+    """Stand-in minimale: telebot la costruisce con più argomenti posizionali,
+    qui basta poter impostare error_code come farebbe la libreria reale."""
+    def __init__(self, error_code):
+        super().__init__(f"fake telegram error {error_code}")
+        self.error_code = error_code
+
+
+class TestTelegramPollLoopResilience:
+    """
+    bot è None nei test (TELEGRAM_TOKEN assente): qui monkeypatchiamo
+    main.bot con un fake dedicato solo per testare _telegram_poll_loop
+    in isolamento, e azzeriamo time.sleep per non rallentare la suite.
+    """
+
+    def test_sopravvive_a_409_conflict_e_riprova(self, monkeypatch):
+        calls = {"n": 0}
+        sleeps = []
+
+        class FakeBot:
+            def infinity_polling(self, **kwargs):
+                calls["n"] += 1
+                if calls["n"] < 3:
+                    raise main.telebot.apihelper.ApiTelegramException(
+                        "getUpdates", {}, {"ok": False, "error_code": 409,
+                                            "description": "Conflict: terminated by other getUpdates request"})
+                # Alla terza chiamata: esce pulito, il wrapper deve fermarsi.
+                return None
+
+        monkeypatch.setattr(main, "bot", FakeBot())
+        monkeypatch.setattr(main.time, "sleep", lambda s: sleeps.append(s))
+
+        main._telegram_poll_loop()
+
+        assert calls["n"] == 3          # ha ritentato dopo i due 409
+        assert len(sleeps) == 2         # un backoff per ciascun fallimento
+        assert sleeps == sorted(sleeps)  # backoff non decrescente (crescita esponenziale)
+
+    def test_sopravvive_a_eccezione_generica_di_rete(self, monkeypatch):
+        calls = {"n": 0}
+
+        class FakeBot:
+            def infinity_polling(self, **kwargs):
+                calls["n"] += 1
+                if calls["n"] < 2:
+                    raise ConnectionError("rete giù")
+                return None
+
+        monkeypatch.setattr(main, "bot", FakeBot())
+        monkeypatch.setattr(main.time, "sleep", lambda s: None)
+
+        main._telegram_poll_loop()
+        assert calls["n"] == 2
+
+    def test_backoff_cresce_ma_resta_sotto_il_tetto_massimo(self, monkeypatch):
+        calls = {"n": 0}
+        sleeps = []
+
+        class FakeBot:
+            def infinity_polling(self, **kwargs):
+                calls["n"] += 1
+                if calls["n"] < 6:
+                    raise main.telebot.apihelper.ApiTelegramException(
+                        "getUpdates", {}, {"ok": False, "error_code": 409, "description": "Conflict"})
+                return None
+
+        monkeypatch.setattr(main, "bot", FakeBot())
+        monkeypatch.setattr(main.time, "sleep", lambda s: sleeps.append(s))
+
+        main._telegram_poll_loop(max_backoff=10)
+
+        assert max(sleeps) <= 10
+        assert sleeps[-1] == 10  # deve aver raggiunto il tetto dopo abbastanza fallimenti
+
+    def test_esce_subito_se_infinity_polling_non_solleva_eccezioni(self, monkeypatch):
+        calls = {"n": 0}
+
+        class FakeBot:
+            def infinity_polling(self, **kwargs):
+                calls["n"] += 1
+                return None
+
+        monkeypatch.setattr(main, "bot", FakeBot())
+        monkeypatch.setattr(main.time, "sleep", lambda s: (_ for _ in ()).throw(
+            AssertionError("non deve dormire se non ci sono errori")))
+
+        main._telegram_poll_loop()
+        assert calls["n"] == 1

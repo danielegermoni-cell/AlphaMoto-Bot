@@ -1,5 +1,13 @@
 """
-AlphaMoto v6.1.1 — Refactor architetturale.
+AlphaMoto v6.1.2 — Refactor architetturale.
+
+Changelog v6.1.2:
+  - _telegram_poll_loop(): il thread di polling Telegram non muore più al
+    primo 409 Conflict (sovrapposizione tra vecchio/nuovo container durante
+    un deploy Render). Ora cattura l'eccezione, applica un backoff breve
+    con crescita esponenziale (cap 30s) e riprova, restando vivo per
+    l'intera durata del processo. Qualsiasi altra eccezione resta loggata
+    per intero — non viene inghiottita in silenzio.
 
 Changelog v6.1.1 (fix minori/display):
   - growth "5D" ora copre davvero 5 intervalli di seduta (iloc[-6]);
@@ -700,7 +708,7 @@ def execute_swap(active_ticker, target, reason_log, telegram_msg):
 
 def update_logic():
     send_telegram(
-        "✅ *Motore v6.1 Online*\n\n"
+        "✅ *Motore v6.1.2 Online*\n\n"
         "🎯 Modalità: Aggressiva\n"
         f"🛑 Stop-Loss attivo: {STOP_LOSS_PCT}%\n"
         f"💰 Take Profit parziale: +{PARTIAL_PROFIT_PCT}%\n"
@@ -1036,6 +1044,47 @@ def _acquire_engine_lock():
         return False
 
 
+def _telegram_poll_loop(max_backoff=30):
+    """
+    FIX v6.1.2 — wrapper resiliente attorno a infinity_polling().
+
+    Il problema che risolve: durante un deploy Render, il container vecchio
+    e quello nuovo restano vivi entrambi per qualche secondo. Entrambi
+    superano il lock locale (_acquire_engine_lock protegge solo DENTRO un
+    container, non TRA container diversi) e partono in polling sullo stesso
+    token Telegram. Telegram rifiuta con 409 Conflict il secondo che chiama
+    getUpdates. Prima di questo fix l'eccezione risaliva fuori da
+    infinity_polling, il thread moriva e i comandi Telegram restavano muti
+    fino al riavvio successivo dell'intero processo.
+
+    Ora il thread non muore mai da solo: cattura qualsiasi eccezione,
+    aspetta un breve backoff (più lungo se il 409 persiste, es. sovrapposizione
+    insolitamente lunga) e riprova. Il 409 è annunciato come evento atteso
+    dei deploy, non come errore critico; qualunque altra eccezione viene
+    comunque loggata per intero (non va inghiottita in silenzio).
+    """
+    backoff = 3
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=20)
+            # infinity_polling normalmente non ritorna mai (loop infinito interno);
+            # se lo fa (es. stop esplicito), non è un errore: usciamo dal wrapper.
+            print("[TELEGRAM] infinity_polling terminato senza eccezioni — polling fermato.")
+            return
+        except telebot.apihelper.ApiTelegramException as e:
+            if getattr(e, "error_code", None) == 409:
+                print(f"[TELEGRAM] 409 Conflict (probabile sovrapposizione deploy) — "
+                      f"riprovo tra {backoff}s...")
+            else:
+                print(f"[TELEGRAM] ApiTelegramException: {e} — riprovo tra {backoff}s...")
+                traceback.print_exc()
+        except Exception as e:
+            print(f"[TELEGRAM] Polling interrotto da errore inatteso: {e} — riprovo tra {backoff}s...")
+            traceback.print_exc()
+        time.sleep(backoff)
+        backoff = min(backoff * 2, max_backoff)
+
+
 def start_background_engine():
     """
     Avvia il loop di trading e il polling Telegram UNA sola volta per
@@ -1046,7 +1095,7 @@ def start_background_engine():
         return
     threading.Thread(target=update_logic, daemon=True, name="alphamoto-trading-loop").start()
     if bot:
-        threading.Thread(target=lambda: bot.infinity_polling(), daemon=True, name="alphamoto-telegram-poll").start()
+        threading.Thread(target=_telegram_poll_loop, daemon=True, name="alphamoto-telegram-poll").start()
     print("🚀 Motore di trading + bot Telegram avviati.")
 
 
