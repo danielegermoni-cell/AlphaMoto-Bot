@@ -90,6 +90,30 @@ class TestStopLoss:
         logs = " ".join(main.store.get("log", []))
         assert "CRITICO" in logs and "STOP-LOSS FALLITO" in logs
 
+    def test_scatta_forza_la_scrittura_su_disco_anche_dentro_il_debounce(self, monkeypatch, tmp_path):
+        """
+        FASE 3: lo stop-loss è un evento critico e deve forzare una scrittura
+        immediata (force=True), bypassando il debounce delle scritture su disco.
+        """
+        monkeypatch.setattr(main.broker, "sell_all_asset", lambda s: True)
+        monkeypatch.setattr(main.store, "_path", str(tmp_path / "state.json"))
+
+        writes = []
+        original_write = main.store._write
+
+        def counting_write(snap):
+            writes.append(snap)
+            original_write(snap)
+
+        monkeypatch.setattr(main.store, "_write", counting_write)
+
+        # Consuma subito la finestra di debounce con una scrittura "normale".
+        main.store.update({"operations_today": 0})
+        writes.clear()
+
+        main.check_stop_loss("SPY", -8.0)
+        assert len(writes) >= 1, "lo stop-loss deve forzare una scrittura immediata"
+
 
 # ---------------------------------------------------------------------------
 # FASE 1.3 — circuit breaker con liquidazione

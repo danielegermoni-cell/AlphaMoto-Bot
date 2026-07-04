@@ -106,11 +106,24 @@ class StateStore:
         "cold_start_hold":       False,   # Fase 3: sospensione nuovi ingressi/swap dopo cold-start mid-day
     }
 
-    def __init__(self, path):
+    def __init__(self, path, write_debounce_sec=10.0):
         self._path     = path
         self._mem_lock = threading.Lock()
         self._io_lock  = threading.Lock()
         self._state    = self._load()
+
+        # FASE 3 — Debounce delle scritture su disco. Ogni update()/mutate()
+        # aggiorna SEMPRE la memoria all'istante (dashboard e decisioni di
+        # trading leggono solo da lì, mai dal disco). La scrittura fisica su
+        # state.json, che è solo una cache best-effort per log/restart, viene
+        # invece limitata a al massimo una ogni write_debounce_sec secondi,
+        # per evitare I/O e lock contention ad ogni singolo aggiornamento
+        # (prima: una scrittura per ogni log/prezzo/segnale, anche più volte
+        # per ciclo). Eventi critici possono forzare una scrittura immediata
+        # con force=True o flush_now().
+        self._write_debounce_sec = write_debounce_sec
+        self._last_write_ts      = 0.0
+        self._write_meta_lock    = threading.Lock()  # protegge SOLO _last_write_ts
 
     # ---- caricamento / persistenza -----------------------------------
 
@@ -144,6 +157,25 @@ class StateStore:
             except Exception as e:
                 print(f"❌ Errore salvataggio state: {e}")
 
+    def _schedule_write(self, snapshot, force=False):
+        """
+        Scrive su disco al massimo una volta ogni write_debounce_sec secondi.
+        Se la finestra non è ancora passata e force=False, la scrittura viene
+        scartata: lo stato in memoria (fonte di verità per dashboard/decisioni)
+        è comunque già aggiornato. force=True bypassa il debounce (usato per
+        eventi critici: stop-loss, circuit breaker, panic sell, cold-start hold).
+        """
+        with self._write_meta_lock:
+            now = time.time()
+            if not force and (now - self._last_write_ts) < self._write_debounce_sec:
+                return
+            self._last_write_ts = now
+        self._write(snapshot)
+
+    def flush_now(self):
+        """Forza subito la scrittura su disco dell'ultimo stato in memoria."""
+        self._schedule_write(self.snapshot(), force=True)
+
     # ---- API pubblica --------------------------------------------------
 
     def snapshot(self):
@@ -155,8 +187,8 @@ class StateStore:
         with self._mem_lock:
             return copy.deepcopy(self._state.get(key, default))
 
-    def update(self, updates=None, log_msg=None, persist=True):
-        """Aggiorna campi e/o aggiunge una voce di log, poi persiste lo snapshot."""
+    def update(self, updates=None, log_msg=None, persist=True, force=False):
+        """Aggiorna campi e/o aggiunge una voce di log, poi persiste lo snapshot (debounced)."""
         with self._mem_lock:
             if updates:
                 self._state.update(updates)
@@ -164,15 +196,15 @@ class StateStore:
                 self._append_log(log_msg)
             snap = self._serialize()
         if persist:
-            self._write(snap)
+            self._schedule_write(snap, force=force)
 
-    def mutate(self, fn, persist=True):
+    def mutate(self, fn, persist=True, force=False):
         """Modifica arbitraria dello stato sotto lock: fn(state_dict)."""
         with self._mem_lock:
             fn(self._state)
             snap = self._serialize()
         if persist:
-            self._write(snap)
+            self._schedule_write(snap, force=force)
 
     def increment(self, key, amount=1):
         self.mutate(lambda s: s.__setitem__(key, s.get(key, 0) + amount))
@@ -290,7 +322,7 @@ if bot:
 
         if success:
             store.update({"current_asset": "LIQUIDO", "entry_price": 0.0,
-                          "position_pnl_pct": None, "circuit_breaker": True})
+                          "position_pnl_pct": None, "circuit_breaker": True}, force=True)
             send_telegram(f"🚨 *PANIC SELL ESEGUITO*\n\nAsset `{active_ticker}` liquidato.\nCircuit breaker attivato.")
         else:
             bot.reply_to(message, "❌ Errore durante la vendita. Controlla Alpaca.", parse_mode='Markdown')
@@ -409,7 +441,7 @@ def _liquidate_for_circuit_breaker(active_ticker):
 
     if ok:
         store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None},
-                     log_msg=f"🔴 CB: posizione {active_ticker} liquidata")
+                     log_msg=f"🔴 CB: posizione {active_ticker} liquidata", force=True)
         store.increment("operations_today")
         send_telegram(
             f"🔴 *CIRCUIT BREAKER*\n\nPosizione `{active_ticker}` LIQUIDATA.\n"
@@ -536,7 +568,7 @@ def check_stop_loss(active_ticker, pnl_pct, degraded=False):
     with trade_lock:
         success = broker.sell_all_asset(active_ticker)
     if success:
-        store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None})
+        store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None}, force=True)
         store.increment("operations_today")
     else:
         send_telegram(
@@ -606,7 +638,7 @@ def execute_swap(active_ticker, target, reason_log, telegram_msg):
 
     if not buy_ok:
         # Vendita riuscita ma acquisto fallito: siamo liquidi, va detto.
-        store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None})
+        store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None}, force=True)
         send_telegram(f"⚠️ Swap incompleto: `{active_ticker}` venduto ma acquisto `{target['id']}` fallito. Portafoglio LIQUIDO.")
         return False
 
@@ -655,7 +687,8 @@ def update_logic():
     if not market_was_closed:
         store.update(
             {"cold_start_hold": True},
-            log_msg="🧊 Cold-start a mercato aperto: nuovi ingressi/swap sospesi in attesa di /confirm_resume"
+            log_msg="🧊 Cold-start a mercato aperto: nuovi ingressi/swap sospesi in attesa di /confirm_resume",
+            force=True
         )
         send_telegram(
             "🧊 *AVVIO A MERCATO APERTO*\n\n"
