@@ -3,483 +3,617 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlphaMoto v5.0</title>
+<title>AlphaMoto v6 — Cockpit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg:       #080c10;
-  --surface:  #0d1117;
-  --border:   #1c2333;
-  --border2:  #2a3548;
-  --text:     #cdd9e5;
-  --muted:    #56687a;
-  --accent:   #58a6ff;
-  --green:    #3fb950;
-  --red:      #f85149;
-  --gold:     #d29922;
-  --purple:   #bc8cff;
-  --orange:   #ffa657;
-  --green-bg: rgba(63,185,80,.12);
-  --red-bg:   rgba(248,81,73,.12);
-  --gold-bg:  rgba(210,153,34,.12);
-  --blue-bg:  rgba(88,166,255,.10);
+/* ═══════════════════════════════════════════════════════════════════
+   ALPHAMOTO COCKPIT — design system "cruscotto notturno"
+   Metafora: ogni strumento del cruscotto mappa un dato reale del bot.
+   ═══════════════════════════════════════════════════════════════════ */
+:root{
+  --asphalt:   #0c0e11;   /* sfondo: asfalto di notte            */
+  --cluster:   #15181d;   /* pannelli strumenti                  */
+  --cluster-2: #101216;   /* incavi / quadranti                  */
+  --bezel:     #2a2f37;   /* ghiere e bordi                      */
+  --bezel-hi:  #3b424d;
+  --lume:      #f0ebe0;   /* bianco caldo retroilluminato        */
+  --dim:       #707a88;   /* etichette spente                    */
+  --faint:     #454c57;
+  --amber:     #ffb454;   /* retroilluminazione strumenti        */
+  --red:       #ff4438;   /* redline                             */
+  --green:     #3fd47f;   /* folle / positivo                    */
+  --blue:      #5cb4ff;   /* info                                */
+  --purple:    #c79bff;   /* take-profit                         */
+  --amber-bg:  rgba(255,180,84,.10);
+  --red-bg:    rgba(255,68,56,.12);
+  --green-bg:  rgba(63,212,127,.12);
+  --lcd-bg:    #171d14;   /* display LCD verde-oliva             */
+  --lcd-ink:   #cfe6b4;
+  --lcd-dim:   #55663f;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;font-size:13px;overflow-x:hidden}
+html,body{min-height:100%;background:var(--asphalt);color:var(--lume);
+  font-family:'IBM Plex Mono',monospace;font-size:13px;overflow-x:hidden}
+body{background:
+  radial-gradient(1200px 500px at 50% -10%, rgba(255,180,84,.05), transparent 60%),
+  var(--asphalt)}
 
-/* ── SCANLINE OVERLAY ── */
-body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);pointer-events:none;z-index:999}
+::selection{background:var(--amber);color:#1a1206}
 
-/* ── LAYOUT ── */
-.shell{display:grid;grid-template-rows:auto 1fr;min-height:100vh;max-width:1600px;margin:0 auto;padding:16px;gap:12px}
+.shell{max-width:1560px;margin:0 auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 
-/* ── HEADER ── */
-header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:6px}
-.logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#fff;letter-spacing:-.5px}
-.logo span{color:var(--accent)}
-.header-right{display:flex;align-items:center;gap:20px}
-.conn-pill{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse-dot 2s infinite}
-@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
-.dot.red{background:var(--red);box-shadow:0 0 6px var(--red);animation:none}
-.mkt-badge{font-size:10px;padding:3px 8px;border-radius:3px;font-weight:700;letter-spacing:.05em}
-.mkt-badge.open{background:var(--green-bg);color:var(--green);border:1px solid rgba(63,185,80,.3)}
-.mkt-badge.closed{background:var(--red-bg);color:var(--muted);border:1px solid var(--border)}
-.cb-badge{font-size:10px;padding:3px 8px;border-radius:3px;font-weight:700;background:var(--red-bg);color:var(--red);border:1px solid rgba(248,81,73,.3);display:none}
-.cb-badge.active{display:inline-block;animation:flash-red 1s infinite}
-@keyframes flash-red{0%,100%{opacity:1}50%{opacity:.4}}
+/* ── HEADER: targa + spie ────────────────────────────────────────── */
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  background:linear-gradient(180deg,var(--cluster),var(--cluster-2));
+  border:1px solid var(--bezel);border-radius:10px;padding:10px 18px}
+.logo{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:20px;
+  letter-spacing:.04em;color:var(--lume);display:flex;align-items:baseline;gap:8px}
+.logo b{color:var(--amber)}
+.logo .vtag{font-size:10px;font-weight:500;color:var(--dim);letter-spacing:.15em}
 
-/* ── MAIN GRID ── */
-.grid{display:grid;grid-template-columns:1fr 1fr 1fr 340px;grid-template-rows:auto auto 1fr;gap:10px}
+/* Spie cruscotto: si accendono solo quando significano qualcosa */
+.lamps{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lamp{display:flex;align-items:center;gap:6px;font-family:'Chakra Petch',sans-serif;
+  font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  padding:5px 10px;border-radius:6px;border:1px solid var(--bezel);
+  color:var(--faint);background:var(--cluster-2);transition:all .3s}
+.lamp .bulb{width:8px;height:8px;border-radius:50%;background:var(--faint);transition:all .3s}
+.lamp.on-green{color:var(--green);border-color:rgba(63,212,127,.35);background:var(--green-bg)}
+.lamp.on-green .bulb{background:var(--green);box-shadow:0 0 8px var(--green)}
+.lamp.on-amber{color:var(--amber);border-color:rgba(255,180,84,.35);background:var(--amber-bg)}
+.lamp.on-amber .bulb{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.lamp.on-red{color:var(--red);border-color:rgba(255,68,56,.4);background:var(--red-bg)}
+.lamp.on-red .bulb{background:var(--red);box-shadow:0 0 10px var(--red)}
+.lamp.blinking{animation:lamp-blink 1s step-start infinite}
+@keyframes lamp-blink{50%{opacity:.35}}
 
-/* ── CARDS ── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px;position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--border2),transparent)}
-.card-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-.card-value{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#fff;line-height:1}
-.card-sub{font-size:11px;color:var(--muted);margin-top:6px}
+/* ── CLUSTER PRINCIPALE: contagiri + marcia + carburante ─────────── */
+.cluster{display:grid;grid-template-columns:minmax(300px,380px) 1fr 300px;gap:12px}
+.pod{background:linear-gradient(180deg,var(--cluster),var(--cluster-2));
+  border:1px solid var(--bezel);border-radius:12px;padding:16px;position:relative}
+.pod-label{font-family:'Chakra Petch',sans-serif;font-size:10px;font-weight:600;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
 
-/* ── KPI CARDS ── */
-.kpi-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
-.kpi .card-value{font-size:20px}
-.kpi .delta{font-size:11px;margin-top:5px;font-weight:700}
-.delta.pos{color:var(--green)} .delta.neg{color:var(--red)} .delta.neu{color:var(--muted)}
+/* CONTAGIRI — signature element */
+.tach-pod{display:flex;flex-direction:column;align-items:center}
+.tach-wrap{position:relative;width:100%;max-width:320px}
+svg.tach{width:100%;height:auto;display:block}
+.tach-tick{stroke:var(--faint);stroke-width:2}
+.tach-tick.major{stroke:var(--dim);stroke-width:3}
+.tach-num{font-family:'Chakra Petch',sans-serif;font-size:11px;font-weight:600;
+  fill:var(--dim);text-anchor:middle}
+.tach-arc{fill:none;stroke-width:7;stroke-linecap:butt;opacity:.85}
+.needle{transform-origin:160px 160px;transition:transform 1s cubic-bezier(.2,.9,.3,1.1)}
+.needle-line{stroke:var(--red);stroke-width:4;stroke-linecap:round;
+  filter:drop-shadow(0 0 4px rgba(255,68,56,.6))}
+.needle-hub{fill:#1d2127;stroke:var(--bezel-hi);stroke-width:2}
+.tach-score{font-family:'Chakra Petch',sans-serif;font-size:40px;font-weight:700;
+  fill:var(--lume);text-anchor:middle}
+.tach-unit{font-family:'Chakra Petch',sans-serif;font-size:9px;letter-spacing:.2em;
+  fill:var(--dim);text-anchor:middle}
+/* shift light: lampeggia su STRONG_BUY */
+.shift-light{width:14px;height:14px;border-radius:50%;background:var(--faint);
+  border:2px solid var(--bezel-hi);margin:0 auto;transition:all .3s}
+.shift-light.armed{background:var(--green);box-shadow:0 0 14px var(--green);
+  animation:shift-blink .5s step-start infinite}
+@keyframes shift-blink{50%{background:var(--faint);box-shadow:none}}
+.shift-caption{text-align:center;font-size:9px;letter-spacing:.15em;color:var(--faint);
+  text-transform:uppercase;margin-top:5px;font-family:'Chakra Petch',sans-serif}
+.verdict-plate{margin-top:12px;font-family:'Chakra Petch',sans-serif;font-size:13px;
+  font-weight:700;letter-spacing:.12em;padding:7px 18px;border-radius:6px;
+  border:1px solid var(--bezel);color:var(--dim);background:var(--cluster-2)}
+.verdict-plate.buy{color:var(--green);border-color:rgba(63,212,127,.35);background:var(--green-bg)}
+.verdict-plate.sell{color:var(--red);border-color:rgba(255,68,56,.35);background:var(--red-bg)}
+.verdict-plate.gold{color:var(--amber);border-color:rgba(255,180,84,.35);background:var(--amber-bg)}
 
-/* ── AI SCORE RING ── */
-.score-card{grid-column:4;grid-row:2/4;display:flex;flex-direction:column}
-.score-ring-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-svg.ring{width:140px;height:140px;transform:rotate(-90deg)}
-.ring-track{fill:none;stroke:var(--border);stroke-width:10}
-.ring-fill{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .8s ease,stroke .4s}
-.ring-label{text-anchor:middle;dominant-baseline:middle;font-family:'Syne',sans-serif;font-size:28px;font-weight:800;fill:#fff;transform:rotate(90deg);transform-origin:70px 70px}
-.ring-sub{text-anchor:middle;font-size:9px;fill:var(--muted);transform:rotate(90deg);transform-origin:70px 70px;letter-spacing:.08em}
-.verdict-big{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;letter-spacing:.1em;text-align:center;padding:8px 16px;border-radius:4px}
-.verdict-big.buy{background:var(--green-bg);color:var(--green);border:1px solid rgba(63,185,80,.25)}
-.verdict-big.sell{background:var(--red-bg);color:var(--red);border:1px solid rgba(248,81,73,.25)}
-.verdict-big.neutral{background:var(--blue-bg);color:var(--muted);border:1px solid var(--border)}
-.verdict-big.gold{background:var(--gold-bg);color:var(--gold);border:1px solid rgba(210,153,34,.25)}
-.ai-details{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
-.ai-detail-item{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px}
-.ai-detail-item .lbl{font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
-.ai-detail-item .val{font-size:12px;font-weight:700;color:#fff;margin-top:2px}
+/* MARCIA + telemetria posizione */
+.gear-pod{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.gear-box{display:flex;flex-direction:column;align-items:center;gap:8px}
+.gear-display{width:120px;height:120px;border-radius:14px;background:var(--cluster-2);
+  border:2px solid var(--bezel);display:flex;align-items:center;justify-content:center;
+  font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:34px;color:var(--amber);
+  text-shadow:0 0 18px rgba(255,180,84,.45);letter-spacing:.02em}
+.gear-display.neutral{color:var(--green);text-shadow:0 0 18px rgba(63,212,127,.45);font-size:56px}
+.gear-caption{font-family:'Chakra Petch',sans-serif;font-size:9px;letter-spacing:.18em;
+  color:var(--dim);text-transform:uppercase}
+.pos-tele{display:flex;flex-direction:column;gap:10px;min-width:0}
+.tele-row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--bezel);
+  padding-bottom:8px}
+.tele-row:last-child{border-bottom:none;padding-bottom:0}
+.tele-k{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+  font-family:'Chakra Petch',sans-serif}
+.tele-v{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:14px;color:var(--lume)}
+.tele-v.pos{color:var(--green)} .tele-v.neg{color:var(--red)} .tele-v.mut{color:var(--dim)}
+/* stop-loss: barra "temperatura" da -6% (redline) a +8% (take profit) */
+.sl-track{height:10px;border-radius:5px;background:linear-gradient(90deg,
+  var(--red) 0%, var(--red) 12%, var(--bezel) 12%, var(--bezel) 88%, var(--purple) 88%);
+  position:relative;margin-top:4px}
+.sl-cursor{position:absolute;top:-4px;width:4px;height:18px;border-radius:2px;
+  background:var(--lume);box-shadow:0 0 6px rgba(240,235,224,.7);
+  transition:left .8s ease;transform:translateX(-50%)}
+.sl-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-top:4px}
 
-/* ── CHART ── */
-.chart-card{grid-column:1/4;grid-row:2}
-.tv-wrap{height:360px;border-radius:4px;overflow:hidden;margin-top:10px;border:1px solid var(--border)}
+/* FUEL — cash gauge */
+.fuel-pod{display:flex;flex-direction:column;gap:14px}
+.fuel-track{height:16px;border-radius:8px;background:var(--cluster-2);
+  border:1px solid var(--bezel);overflow:hidden}
+.fuel-fill{height:100%;border-radius:8px;transition:width .8s ease;
+  background:linear-gradient(90deg,#c46a2b,var(--amber))}
+.fuel-scale{display:flex;justify-content:space-between;font-family:'Chakra Petch',sans-serif;
+  font-size:10px;font-weight:600;color:var(--dim);letter-spacing:.1em}
+.fuel-nums{display:flex;justify-content:space-between;align-items:baseline}
+.fuel-big{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:24px;color:var(--lume)}
+.fuel-sub{font-size:10px;color:var(--dim)}
+.fuel-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
+.fuel-cell{background:var(--cluster-2);border:1px solid var(--bezel);border-radius:8px;padding:8px 10px}
+.fuel-cell .k{font-size:9px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;
+  font-family:'Chakra Petch',sans-serif}
+.fuel-cell .v{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:15px;margin-top:2px}
+
+/* ── TRIP COMPUTER LCD ───────────────────────────────────────────── */
+.lcd-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.lcd{background:var(--lcd-bg);border:1px solid #262e22;border-radius:10px;padding:12px 16px;
+  box-shadow:inset 0 2px 10px rgba(0,0,0,.5)}
+.lcd .k{font-family:'Chakra Petch',sans-serif;font-size:9px;font-weight:600;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--lcd-dim)}
+.lcd .v{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:26px;
+  color:var(--lcd-ink);margin-top:4px;text-shadow:0 0 10px rgba(207,230,180,.25);
+  font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lcd .s{font-size:10px;color:var(--lcd-dim);margin-top:3px;font-variant-numeric:tabular-nums}
+.lcd.alert .v{color:#ffd2ce;text-shadow:0 0 10px rgba(255,68,56,.35)}
+
+/* ── SEZIONE CENTRALE: grafico + pit board ───────────────────────── */
+.mid{display:grid;grid-template-columns:1fr 420px;gap:12px}
+.tv-wrap{height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--bezel);margin-top:10px}
 .tv-wrap iframe{width:100%;height:100%;border:none}
-.asset-tag{display:inline-flex;align-items:center;gap:8px}
-.asset-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--accent)}
-.risk-tag{font-size:10px;padding:2px 8px;border-radius:3px;font-weight:700}
-.risk-tag.safe{background:var(--green-bg);color:var(--green)}
-.risk-tag.elevated{background:var(--gold-bg);color:var(--gold)}
-.risk-tag.high{background:var(--red-bg);color:var(--red)}
+.chart-head{display:flex;align-items:baseline;gap:12px}
+.chart-ticker{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:22px;color:var(--amber)}
+.risk-flag{font-family:'Chakra Petch',sans-serif;font-size:10px;font-weight:700;
+  letter-spacing:.12em;padding:3px 10px;border-radius:5px}
+.risk-flag.safe{background:var(--green-bg);color:var(--green)}
+.risk-flag.elevated{background:var(--amber-bg);color:var(--amber)}
+.risk-flag.high{background:var(--red-bg);color:var(--red)}
 
-/* ── STOP-LOSS BAR ── */
-.sl-section{margin-top:10px}
-.sl-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:10px;color:var(--muted)}
-.sl-bar-wrap{height:6px;background:var(--border);border-radius:3px;overflow:hidden;position:relative}
-.sl-bar-fill{height:100%;border-radius:3px;transition:width .6s ease,background .4s}
-.sl-markers{display:flex;justify-content:space-between;margin-top:3px;font-size:9px;color:var(--muted)}
-
-/* ── RADAR TABLE ── */
-.radar-card{grid-column:1/4;grid-row:3;display:flex;flex-direction:column}
+/* PIT BOARD */
+.pit{display:flex;flex-direction:column}
 table{width:100%;border-collapse:collapse;margin-top:8px}
-thead th{font-size:9px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;padding:0 0 8px;text-align:left;border-bottom:1px solid var(--border)}
-thead th:last-child,thead th:nth-child(3){text-align:right}
-tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
-tbody tr:hover{background:rgba(255,255,255,.02)}
-tbody td{padding:9px 0;font-size:12px;vertical-align:middle}
-.ticker-cell{font-weight:700;color:#fff;font-family:'Syne',sans-serif}
-.ticker-cell.active-row{color:var(--accent)}
-.price-cell{color:var(--muted)}
-.growth-pill{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;text-align:right}
-.growth-pill.up{background:var(--green-bg);color:var(--green)}
-.growth-pill.down{background:var(--red-bg);color:var(--red)}
-.score-bar-wrap{width:80px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;display:inline-block}
-.score-bar{height:100%;border-radius:3px;transition:width .5s}
-.verdict-cell{font-size:10px;font-weight:700;text-align:right}
-.v-strong-buy{color:var(--green)} .v-buy{color:#3fb9a0} .v-weak-buy{color:var(--muted)}
-.v-neutral{color:var(--muted)} .v-sell{color:var(--red)}
+thead th{font-family:'Chakra Petch',sans-serif;font-size:9px;font-weight:600;
+  letter-spacing:.14em;color:var(--dim);text-transform:uppercase;text-align:left;
+  padding:0 6px 8px;border-bottom:1px solid var(--bezel)}
+thead th.r{text-align:right}
+tbody tr{border-bottom:1px solid rgba(42,47,55,.55)}
+tbody tr:hover{background:rgba(255,180,84,.04)}
+tbody td{padding:9px 6px;font-size:12px;vertical-align:middle;font-variant-numeric:tabular-nums}
+.t-cell{font-family:'Chakra Petch',sans-serif;font-weight:700;color:var(--lume)}
+.t-cell.riding{color:var(--amber)}
+.pole{display:inline-block;width:16px;color:var(--amber)}
+.g-pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.g-pill.up{background:var(--green-bg);color:var(--green)}
+.g-pill.down{background:var(--red-bg);color:var(--red)}
+.s-bar-wrap{width:64px;height:5px;background:var(--bezel);border-radius:3px;overflow:hidden;
+  display:inline-block;vertical-align:middle;margin-right:6px}
+.s-bar{height:100%;border-radius:3px;transition:width .5s}
+.v-cell{font-family:'Chakra Petch',sans-serif;font-size:10px;font-weight:700;text-align:right;letter-spacing:.04em}
+.v-strong{color:var(--green)} .v-buy{color:#4fd4b0} .v-weak{color:var(--dim)}
+.v-neutral{color:var(--faint)} .v-sell{color:var(--red)}
 
-/* ── LOG ── */
-.log-card{grid-column:4;grid-row:2/4;display:flex;flex-direction:column}
-.log-scroll{flex:1;overflow-y:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px;max-height:500px}
+/* ── TELEMETRIA (log) ────────────────────────────────────────────── */
+.telemetry .log-scroll{max-height:220px;overflow-y:auto;margin-top:8px;
+  display:flex;flex-direction:column;gap:3px}
 .log-scroll::-webkit-scrollbar{width:4px}
-.log-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.log-entry{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px 8px;font-size:10px;line-height:1.5}
-.log-time{color:var(--accent);margin-right:6px}
-.log-text{color:var(--muted)}
+.log-scroll::-webkit-scrollbar-thumb{background:var(--bezel-hi);border-radius:2px}
+.log-entry{display:flex;gap:10px;padding:5px 8px;border-left:2px solid var(--bezel);
+  background:rgba(16,18,22,.6);border-radius:0 4px 4px 0;font-size:11px;line-height:1.5}
+.log-time{color:var(--amber);flex-shrink:0}
+.log-text{color:var(--dim)}
 
-/* ── BLINK ── */
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-.blink{animation:blink 1s step-start infinite}
+/* ── RESPONSIVE ──────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  .cluster{grid-template-columns:1fr 1fr}
+  .fuel-pod{grid-column:1/-1}
+  .mid{grid-template-columns:1fr}
+  .lcd-strip{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:700px){
+  .cluster{grid-template-columns:1fr}
+  .gear-pod{grid-template-columns:1fr;justify-items:center}
+  .lcd-strip{grid-template-columns:1fr 1fr}
+  header{flex-direction:column;align-items:flex-start}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 </style>
 </head>
 <body>
 <div class="shell">
 
+  <!-- ═══ HEADER: targa + spie cruscotto ═══ -->
   <header>
-    <div class="logo">🏍️ Alpha<span>Moto</span> <span style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace">v5.0</span></div>
-    <div class="header-right">
-      <span class="cb-badge" id="cb-badge">⛔ CIRCUIT BREAKER</span>
-      <span class="mkt-badge closed" id="mkt-badge">CHIUSO</span>
-      <span id="minutes-to-close" style="font-size:10px;color:var(--muted)"></span>
-      <div class="conn-pill">
-        <div class="dot" id="conn-dot"></div>
-        <span id="conn-text">Connessione...</span>
-      </div>
+    <div class="logo">🏍️ ALPHA<b>MOTO</b> <span class="vtag">V6 · COCKPIT</span></div>
+    <div class="lamps">
+      <div class="lamp" id="lamp-cb"><span class="bulb"></span>CIRCUIT BREAKER</div>
+      <div class="lamp" id="lamp-mkt"><span class="bulb"></span><span id="lamp-mkt-txt">MERCATO</span></div>
+      <div class="lamp" id="lamp-risk"><span class="bulb"></span><span id="lamp-risk-txt">RISK</span></div>
+      <div class="lamp" id="lamp-conn"><span class="bulb"></span><span id="lamp-conn-txt">LINK</span></div>
     </div>
   </header>
 
-  <div class="grid">
+  <!-- ═══ CLUSTER STRUMENTI ═══ -->
+  <div class="cluster">
 
-    <!-- KPI ROW -->
-    <div class="kpi-row">
-      <div class="card kpi">
-        <div class="card-label">Patrimonio</div>
-        <div class="card-value" id="val-equity">$—</div>
-        <div class="delta" id="val-daily-pnl">—</div>
+    <!-- CONTAGIRI = AI SCORE -->
+    <div class="pod tach-pod">
+      <div class="pod-label">Motore AI — Score composito</div>
+      <div class="tach-wrap">
+        <svg class="tach" viewBox="0 0 320 240" role="img" aria-label="AI score gauge">
+          <g id="tach-static"></g>
+          <g class="needle" id="needle">
+            <line class="needle-line" x1="160" y1="160" x2="160" y2="52"/>
+          </g>
+          <circle class="needle-hub" cx="160" cy="160" r="14"/>
+          <text class="tach-score" id="tach-score" x="160" y="215">0</text>
+          <text class="tach-unit" x="160" y="230">SCORE / 100</text>
+        </svg>
       </div>
-      <div class="card kpi">
-        <div class="card-label">Cash libero</div>
-        <div class="card-value" id="val-cash">$—</div>
-        <div class="card-sub" id="val-cash-pct">—% del portafoglio</div>
+      <div>
+        <div class="shift-light" id="shift-light"></div>
+        <div class="shift-caption">shift light · strong buy</div>
       </div>
-      <div class="card kpi">
-        <div class="card-label">Investito</div>
-        <div class="card-value" id="val-invested">$—</div>
-        <div class="card-sub" id="val-invested-pct">—% del portafoglio</div>
+      <div class="verdict-plate" id="verdict-plate">IN ATTESA</div>
+    </div>
+
+    <!-- MARCIA = ASSET ATTIVO + telemetria posizione -->
+    <div class="pod gear-pod">
+      <div class="gear-box">
+        <div class="pod-label" style="margin-bottom:0">Marcia inserita</div>
+        <div class="gear-display neutral" id="gear-display">N</div>
+        <div class="gear-caption" id="gear-caption">FOLLE · LIQUIDO</div>
       </div>
-      <div class="card kpi">
-        <div class="card-label">Asset attivo</div>
-        <div class="card-value" id="val-asset" style="color:var(--accent)">—</div>
-        <div class="card-sub" id="val-entry">Entry: —</div>
-      </div>
-      <div class="card kpi">
-        <div class="card-label">Ops oggi</div>
-        <div class="card-value" id="val-ops">0</div>
-        <div class="card-sub">operazioni eseguite</div>
-      </div>
-      <div class="card kpi">
-        <div class="card-label">P&L posizione</div>
-        <div class="card-value" id="val-pos-pnl">—</div>
-        <div class="card-sub" id="val-partial-tag"></div>
+      <div class="pos-tele">
+        <div class="tele-row">
+          <span class="tele-k">Entry</span>
+          <span class="tele-v" id="tel-entry">—</span>
+        </div>
+        <div class="tele-row">
+          <span class="tele-k">P&amp;L posizione</span>
+          <span class="tele-v mut" id="tel-pnl">—</span>
+        </div>
+        <div class="tele-row">
+          <span class="tele-k">Take profit parziale</span>
+          <span class="tele-v mut" id="tel-partial">—</span>
+        </div>
+        <div>
+          <div class="tele-k" style="margin-bottom:2px">Stop-loss <span style="color:var(--faint)">-6%</span> → Take profit <span style="color:var(--faint)">+8%</span></div>
+          <div class="sl-track"><div class="sl-cursor" id="sl-cursor" style="left:40%"></div></div>
+          <div class="sl-scale"><span>-6%</span><span>0%</span><span>+8%</span></div>
+        </div>
       </div>
     </div>
 
-    <!-- CHART -->
-    <div class="card chart-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div>
-          <div class="card-label">Grafico posizione attiva</div>
-          <div class="asset-tag">
-            <span class="asset-name" id="chart-ticker">SPY</span>
-            <span class="risk-tag safe" id="risk-tag">SAFE</span>
-          </div>
+    <!-- FUEL = CASH -->
+    <div class="pod fuel-pod">
+      <div class="pod-label" style="margin-bottom:0">Carburante — Cash disponibile</div>
+      <div class="fuel-nums">
+        <span class="fuel-big" id="fuel-cash">$—</span>
+        <span class="fuel-sub" id="fuel-pct">—% del portafoglio</span>
+      </div>
+      <div class="fuel-track"><div class="fuel-fill" id="fuel-fill" style="width:0%"></div></div>
+      <div class="fuel-scale"><span>E</span><span>½</span><span>F</span></div>
+      <div class="fuel-split">
+        <div class="fuel-cell">
+          <div class="k">Investito</div>
+          <div class="v" id="fuel-invested">$—</div>
         </div>
-        <div class="sl-section" style="min-width:220px">
-          <div class="sl-label">
-            <span>Stop-Loss <span id="sl-pct-label" style="color:var(--text)">—</span></span>
-            <span id="sl-trigger">soglia: -6%</span>
-          </div>
-          <div class="sl-bar-wrap">
-            <div class="sl-bar-fill" id="sl-bar" style="width:50%;background:var(--green)"></div>
-          </div>
-          <div class="sl-markers"><span>-6%</span><span>0%</span><span>+8%</span><span>+∞</span></div>
+        <div class="fuel-cell">
+          <div class="k">Chiusura tra</div>
+          <div class="v" id="fuel-close" style="color:var(--dim)">—</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TRIP COMPUTER LCD ═══ -->
+  <div class="lcd-strip">
+    <div class="lcd">
+      <div class="k">Patrimonio</div>
+      <div class="v" id="lcd-equity">$ —</div>
+      <div class="s">equity totale Alpaca</div>
+    </div>
+    <div class="lcd" id="lcd-day-box">
+      <div class="k">Trip · P&amp;L oggi</div>
+      <div class="v" id="lcd-day">—</div>
+      <div class="s" id="lcd-day-sub">dalla campanella</div>
+    </div>
+    <div class="lcd" id="lcd-pos-box">
+      <div class="k">P&amp;L posizione</div>
+      <div class="v" id="lcd-pos">—</div>
+      <div class="s" id="lcd-pos-sub">non a mercato</div>
+    </div>
+    <div class="lcd">
+      <div class="k">Odometro · Ops oggi</div>
+      <div class="v" id="lcd-ops">0</div>
+      <div class="s">operazioni eseguite</div>
+    </div>
+  </div>
+
+  <!-- ═══ GRAFICO + PIT BOARD ═══ -->
+  <div class="mid">
+    <div class="pod">
+      <div class="pod-label">Su strada — Posizione attiva</div>
+      <div class="chart-head">
+        <span class="chart-ticker" id="chart-ticker">SPY</span>
+        <span class="risk-flag safe" id="risk-flag">SAFE</span>
       </div>
       <div class="tv-wrap" id="tv-wrap"></div>
     </div>
 
-    <!-- AI SCORE -->
-    <div class="card score-card">
-      <div class="card-label">Motore AI — Score Composito</div>
-      <div class="score-ring-wrap">
-        <svg class="ring" viewBox="0 0 140 140">
-          <circle class="ring-track" cx="70" cy="70" r="56"/>
-          <circle class="ring-fill" id="ring-circle" cx="70" cy="70" r="56"
-                  stroke-dasharray="351.86" stroke-dashoffset="351.86" stroke="var(--accent)"/>
-          <text class="ring-label" id="ring-num" x="70" y="70">0</text>
-          <text class="ring-sub" x="70" y="85">/100</text>
-        </svg>
-        <div class="verdict-big neutral" id="verdict-badge">CARICAMENTO</div>
-        <div class="ai-details">
-          <div class="ai-detail-item">
-            <div class="lbl">RSI</div>
-            <div class="val" id="ai-rsi">—</div>
-          </div>
-          <div class="ai-detail-item">
-            <div class="lbl">Volume</div>
-            <div class="val" id="ai-vol">—</div>
-          </div>
-          <div class="ai-detail-item">
-            <div class="lbl">MACD Cross</div>
-            <div class="val" id="ai-macd">—</div>
-          </div>
-          <div class="ai-detail-item">
-            <div class="lbl">Best Asset</div>
-            <div class="val" id="ai-best">—</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RADAR TABLE -->
-    <div class="card radar-card">
-      <div class="card-label">Radar strategico — Score AI composito</div>
+    <div class="pod pit">
+      <div class="pod-label">Pit board — Radar strategico</div>
       <table>
         <thead>
           <tr>
             <th>Ticker</th>
-            <th>Prezzo</th>
-            <th style="text-align:center">Score</th>
-            <th>5D%</th>
-            <th>RSI</th>
-            <th style="text-align:right">Verdetto</th>
+            <th class="r">Prezzo</th>
+            <th>Score</th>
+            <th class="r">5D%</th>
+            <th class="r">RSI</th>
+            <th class="r">Verdetto</th>
           </tr>
         </thead>
-        <tbody id="radar-body"></tbody>
+        <tbody id="pit-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--faint);padding:24px">In attesa di telemetria...</td></tr>
+        </tbody>
       </table>
     </div>
+  </div>
 
-    <!-- LOG -->
-    <div class="card log-card">
-      <div class="card-label">System log <span class="blink" style="color:var(--green)">▌</span></div>
-      <div class="log-scroll" id="log-scroll"></div>
-    </div>
+  <!-- ═══ TELEMETRIA / LOG ═══ -->
+  <div class="pod telemetry">
+    <div class="pod-label">Telemetria di bordo</div>
+    <div class="log-scroll" id="log-scroll"></div>
+  </div>
 
-  </div><!-- /grid -->
-</div><!-- /shell -->
+</div>
 
 <script>
-let currentSymbol = "";
-let lastData = null;
-
+"use strict";
 const $ = id => document.getElementById(id);
+let currentSymbol = "";
 
-function fmt$(n) {
-  if (n == null || isNaN(n)) return "$—";
-  return "$" + parseFloat(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+/* ── formatter ─────────────────────────────────────────────────── */
+const fmt$ = n => (n == null || isNaN(n)) ? "$—"
+  : "$" + parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtPct = n => (n == null || isNaN(n)) ? "—"
+  : (n >= 0 ? "+" : "") + parseFloat(n).toFixed(2) + "%";
+
+/* ── CONTAGIRI: geometria statica (tacche, numeri, archi zona) ──── */
+/* Quadrante: -100 (sx) → +100 (dx), sweep 240°, da -120° a +120°.  */
+const CX = 160, CY = 160, R = 132;
+const scoreToAngle = s => (Math.max(-100, Math.min(100, s)) + 100) / 200 * 240 - 120;
+const polar = (angleDeg, radius) => {
+  const a = (angleDeg - 90) * Math.PI / 180;
+  return [CX + radius * Math.cos(a), CY + radius * Math.sin(a)];
+};
+function arcPath(fromScore, toScore, radius){
+  const a0 = scoreToAngle(fromScore), a1 = scoreToAngle(toScore);
+  const [x0,y0] = polar(a0, radius), [x1,y1] = polar(a1, radius);
+  const large = (a1 - a0) > 180 ? 1 : 0;
+  return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${radius} ${radius} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
 }
-function fmtPct(n, force=false) {
-  if (n == null || isNaN(n)) return "—";
-  const s = parseFloat(n);
-  return (s >= 0 ? "+" : "") + s.toFixed(2) + "%";
+(function buildTach(){
+  const g = $('tach-static');
+  let html = '';
+  // Archi zona: rossa (score negativo), neutra, verde, ambra (spinta massima)
+  const zones = [
+    [-100, -30, 'var(--red)'],
+    [ -30,  10, 'var(--faint)'],
+    [  10,  60, 'var(--green)'],
+    [  60, 100, 'var(--amber)'],
+  ];
+  for (const [f, t, c] of zones)
+    html += `<path class="tach-arc" d="${arcPath(f, t, R)}" stroke="${c}"/>`;
+  // Tacche ogni 10, maggiori ogni 20 con numero
+  for (let s = -100; s <= 100; s += 10){
+    const major = s % 20 === 0;
+    const a = scoreToAngle(s);
+    const [x1,y1] = polar(a, R - 10);
+    const [x2,y2] = polar(a, R - (major ? 24 : 18));
+    html += `<line class="tach-tick${major ? ' major' : ''}" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+    if (major && s % 40 === 0){
+      const [tx,ty] = polar(a, R - 40);
+      html += `<text class="tach-num" x="${tx.toFixed(1)}" y="${(ty+4).toFixed(1)}">${s}</text>`;
+    }
+  }
+  g.innerHTML = html;
+})();
+
+function setTach(score){
+  const s = Math.max(-100, Math.min(100, Math.round(score || 0)));
+  $('needle').style.transform = `rotate(${scoreToAngle(s)}deg)`;
+  const num = $('tach-score');
+  num.textContent = s;
+  num.style.fill = s >= 60 ? 'var(--amber)' : s >= 10 ? 'var(--green)'
+                 : s <= -30 ? 'var(--red)' : 'var(--lume)';
 }
 
-function setScoreRing(score) {
-  const s = Math.max(-100, Math.min(100, score || 0));
-  const norm = (s + 100) / 200; // 0..1
-  const circ = 351.86;
-  const offset = circ * (1 - norm);
-  const el = $('ring-circle');
-  el.style.strokeDashoffset = offset;
-  $('ring-num').textContent = s;
-
-  if (s >= 50)       el.style.stroke = 'var(--green)';
-  else if (s >= 20)  el.style.stroke = '#3fb9a0';
-  else if (s >= -10) el.style.stroke = 'var(--muted)';
-  else               el.style.stroke = 'var(--red)';
-}
-
-function setVerdict(verdict) {
-  const el = $('verdict-badge');
+function setVerdict(verdict){
+  const el = $('verdict-plate');
   el.textContent = verdict || "—";
-  el.className = 'verdict-big';
-  if (!verdict) { el.classList.add('neutral'); return; }
-  const v = verdict.toUpperCase();
-  if (v.includes('STRONG'))     el.classList.add('buy');
-  else if (v === 'BUY')         el.classList.add('buy');
-  else if (v.includes('SELL'))  el.classList.add(v.includes('GOLD') ? 'gold' : 'sell');
-  else                          el.classList.add('neutral');
+  el.className = 'verdict-plate';
+  const v = (verdict || '').toUpperCase();
+  if (v.includes('GOLD'))        el.classList.add('gold');
+  else if (v.includes('SELL'))   el.classList.add('sell');
+  else if (v.includes('BUY'))    el.classList.add('buy');
+  $('shift-light').classList.toggle('armed', v.includes('STRONG'));
 }
 
-function updateChart(symbol) {
+/* ── marcia / posizione ────────────────────────────────────────── */
+function setGear(asset){
+  const gd = $('gear-display'), gc = $('gear-caption');
+  const liquid = !asset || asset === 'LIQUIDO';
+  gd.textContent = liquid ? 'N' : asset;
+  gd.classList.toggle('neutral', liquid);
+  gd.style.fontSize = liquid ? '56px' : (asset.length > 3 ? '28px' : '34px');
+  gc.textContent = liquid ? 'FOLLE · LIQUIDO' : 'A MERCATO';
+}
+
+function setSlCursor(pnl){
+  const cur = $('sl-cursor');
+  if (pnl == null || isNaN(pnl)){ cur.style.left = '43%'; cur.style.opacity = .25; return; }
+  cur.style.opacity = 1;
+  // Scala visiva: -7% → 0% della barra, +9% → 100% (redline al 12%, TP all'88%)
+  const pct = Math.max(0, Math.min(100, (pnl + 7) / 16 * 100));
+  cur.style.left = pct + '%';
+}
+
+/* ── grafico ───────────────────────────────────────────────────── */
+function updateChart(symbol){
   const sym = (!symbol || symbol === 'LIQUIDO') ? 'SPY' : symbol;
   if (sym === currentSymbol) return;
   currentSymbol = sym;
-  $('tv-wrap').innerHTML = `<iframe src="https://s.tradingview.com/widgetembed/?symbol=${sym}&interval=D&theme=dark&style=1&locale=it&timezone=Europe%2FRome&hide_side_toolbar=1&allow_symbol_change=0&save_image=0&withdateranges=1" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
+  $('tv-wrap').innerHTML = `<iframe src="https://s.tradingview.com/widgetembed/?symbol=${sym}&interval=D&theme=dark&style=1&locale=it&timezone=Europe%2FRome&hide_side_toolbar=1&allow_symbol_change=0&save_image=0&withdateranges=1" allowtransparency="true" scrolling="no" allowfullscreen title="Grafico ${sym}"></iframe>`;
 }
 
-function updateSlBar(positionPnlPct) {
-  const bar = $('sl-bar');
-  const lbl = $('sl-pct-label');
-  if (positionPnlPct == null || isNaN(positionPnlPct)) {
-    bar.style.width = '50%';
-    bar.style.background = 'var(--muted)';
-    lbl.textContent = '—';
-    return;
-  }
-  lbl.textContent = fmtPct(positionPnlPct);
-  // Mappa -10% → 0% e +20% → 100%
-  const pct = Math.max(0, Math.min(100, ((positionPnlPct + 10) / 30) * 100));
-  bar.style.width = pct + '%';
-  if (positionPnlPct <= -4)        bar.style.background = 'var(--red)';
-  else if (positionPnlPct <= 0)     bar.style.background = 'var(--gold)';
-  else if (positionPnlPct >= 8)     bar.style.background = 'var(--purple)';
-  else                              bar.style.background = 'var(--green)';
-}
-
-function verdictClass(v) {
-  if (!v) return 'v-neutral';
-  const u = v.toUpperCase();
-  if (u.includes('STRONG')) return 'v-strong-buy';
+/* ── pit board ─────────────────────────────────────────────────── */
+const vClass = v => {
+  const u = (v || '').toUpperCase();
+  if (u.includes('STRONG')) return 'v-strong';
   if (u === 'BUY')          return 'v-buy';
-  if (u.includes('WEAK'))   return 'v-weak-buy';
+  if (u.includes('WEAK'))   return 'v-weak';
   if (u.includes('SELL'))   return 'v-sell';
   return 'v-neutral';
-}
+};
+const sColor = s => s >= 60 ? 'var(--amber)' : s >= 10 ? 'var(--green)'
+                  : s <= -30 ? 'var(--red)' : 'var(--dim)';
 
-function scoreColor(s) {
-  if (s >= 50) return 'var(--green)';
-  if (s >= 20) return '#3fb9a0';
-  if (s >= -10) return 'var(--muted)';
-  return 'var(--red)';
-}
-
-function renderRadar(assets, activeAsset) {
-  const tbody = $('radar-body');
-  if (!assets || !assets.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Mercato chiuso / attesa dati...</td></tr>`;
+function renderPit(assets, activeAsset){
+  const tbody = $('pit-body');
+  if (!assets || !assets.length){
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:24px">Mercato chiuso / attesa dati...</td></tr>`;
     return;
   }
   tbody.innerHTML = assets.map(a => {
-    const isActive = a.id === activeAsset;
+    const riding = a.id === activeAsset;
     const sc = a.score || 0;
     const barW = Math.max(0, Math.min(100, (sc + 100) / 2));
     return `<tr>
-      <td><span class="ticker-cell ${isActive ? 'active-row' : ''}">${isActive ? '▶ ' : ''}${a.id}</span></td>
-      <td class="price-cell">$${(a.price||0).toFixed(2)}</td>
-      <td style="text-align:center">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div class="score-bar-wrap"><div class="score-bar" style="width:${barW}%;background:${scoreColor(sc)}"></div></div>
-          <span style="font-size:11px;font-weight:700;color:${scoreColor(sc)}">${sc}</span>
-        </div>
+      <td><span class="pole">${riding ? '▸' : ''}</span><span class="t-cell${riding ? ' riding' : ''}">${a.id}</span></td>
+      <td style="text-align:right;color:var(--dim)">$${(a.price || 0).toFixed(2)}</td>
+      <td>
+        <span class="s-bar-wrap"><span class="s-bar" style="display:block;width:${barW}%;background:${sColor(sc)}"></span></span>
+        <span style="font-weight:600;color:${sColor(sc)}">${sc}</span>
       </td>
-      <td><span class="growth-pill ${a.growth >= 0 ? 'up' : 'down'}">${fmtPct(a.growth)}</span></td>
-      <td style="color:var(--muted)">${a.rsi ? a.rsi.toFixed(0) : '—'}</td>
-      <td class="verdict-cell"><span class="${verdictClass(a.verdict)}">${a.verdict || '—'}</span></td>
+      <td style="text-align:right"><span class="g-pill ${a.growth >= 0 ? 'up' : 'down'}">${fmtPct(a.growth)}</span></td>
+      <td style="text-align:right;color:var(--dim)">${a.rsi != null ? Number(a.rsi).toFixed(0) : '—'}</td>
+      <td class="v-cell"><span class="${vClass(a.verdict)}">${a.verdict || '—'}</span></td>
     </tr>`;
   }).join('');
 }
 
-function renderLog(logs) {
+/* ── telemetria (log) ──────────────────────────────────────────── */
+function renderLog(logs){
   const el = $('log-scroll');
   if (!logs || !logs.length) return;
   el.innerHTML = logs.map(msg => {
-    const m = msg.match(/^\[(\d{2}:\d{2}:\d{2})\] (.*)/);
-    if (m) return `<div class="log-entry"><span class="log-time">${m[1]}</span><span class="log-text">${m[2]}</span></div>`;
-    return `<div class="log-entry"><span class="log-text">${msg}</span></div>`;
+    const m = String(msg).match(/^\[(\d{2}:\d{2}:\d{2})\] (.*)/);
+    return m
+      ? `<div class="log-entry"><span class="log-time">${m[1]}</span><span class="log-text">${m[2]}</span></div>`
+      : `<div class="log-entry"><span class="log-text">${msg}</span></div>`;
   }).join('');
 }
 
-async function fetchAndRender() {
+/* ── spie ──────────────────────────────────────────────────────── */
+function setLamp(id, state, txtId, txt){  // state: null | 'green' | 'amber' | 'red'
+  const el = $(id);
+  el.className = 'lamp' + (state ? ` on-${state}` : '');
+  if (txtId && txt != null) $(txtId).textContent = txt;
+  return el;
+}
+
+/* ── ciclo di aggiornamento ────────────────────────────────────── */
+async function fetchAndRender(){
   try {
-    // Costruisci URL relativo (funziona sia in locale che su Render)
     const token = new URLSearchParams(window.location.search).get('token') || '';
     const headers = token ? {'X-API-Key': token} : {};
     const res = await fetch('/api/state', {headers});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const d = await res.json();
 
-    $('conn-dot').classList.remove('red');
-    $('conn-text').textContent = 'Alpaca API';
+    setLamp('lamp-conn', 'green', 'lamp-conn-txt', 'ALPACA LINK');
 
-    // Market status
-    const isOpen = d.market_open;
-    const mktBadge = $('mkt-badge');
-    mktBadge.textContent = isOpen ? 'APERTO' : 'CHIUSO';
-    mktBadge.className = 'mkt-badge ' + (isOpen ? 'open' : 'closed');
-    const mtc = d.minutes_to_close;
-    $('minutes-to-close').textContent = (isOpen && mtc > 0) ? `chiude tra ${mtc}m` : '';
+    // Spie
+    const isOpen = !!d.market_open;
+    setLamp('lamp-mkt', isOpen ? 'green' : null, 'lamp-mkt-txt', isOpen ? 'MERCATO APERTO' : 'MERCATO CHIUSO');
+    const cbLamp = setLamp('lamp-cb', d.circuit_breaker ? 'red' : null);
+    cbLamp.classList.toggle('blinking', !!d.circuit_breaker);
+    const risk = d.bridgewater_risk || 'SAFE';
+    setLamp('lamp-risk',
+      risk === 'HIGH_RISK' ? 'red' : risk === 'ELEVATED' ? 'amber' : 'green',
+      'lamp-risk-txt', risk.replace('_',' '));
 
-    // Circuit breaker
-    const cb = d.circuit_breaker;
-    $('cb-badge').classList.toggle('active', !!cb);
-
-    // KPI
+    // Numeri base
     const equity   = d.wallet   || 0;
     const cash     = d.cash     || 0;
     const invested = d.invested || 0;
+    const asset    = d.current_asset || 'LIQUIDO';
+    const posPnl   = d.position_pnl_pct ?? null;
 
-    $('val-equity').textContent   = fmt$(equity);
-    $('val-cash').textContent     = fmt$(cash);
-    $('val-invested').textContent = fmt$(invested);
-    $('val-ops').textContent      = d.operations_today || 0;
-
-    if (equity > 0) {
-      $('val-cash-pct').textContent     = `${((cash/equity)*100).toFixed(1)}% del portafoglio`;
-      $('val-invested-pct').textContent = `${((invested/equity)*100).toFixed(1)}% del portafoglio`;
-    }
-
-    // Daily P&L
-    const dailyStart = d.daily_start_equity || equity;
-    const dailyPnl   = equity - dailyStart;
-    const dailyPct   = dailyStart > 0 ? (dailyPnl / dailyStart * 100) : 0;
-    const pnlEl = $('val-daily-pnl');
-    pnlEl.textContent = `${fmtPct(dailyPct)} oggi (${dailyPnl >= 0 ? '+' : ''}${fmt$(dailyPnl)})`;
-    pnlEl.className = 'delta ' + (dailyPnl >= 0 ? 'pos' : 'neg');
-
-    // Asset attivo
-    const asset = d.current_asset || 'LIQUIDO';
-    $('val-asset').textContent  = asset;
-    $('val-entry').textContent  = d.entry_price ? `Entry: ${fmt$(d.entry_price)}` : 'Entry: —';
-    $('chart-ticker').textContent = asset;
-    updateChart(asset);
-
-    // Stop-loss bar — simulato dalla posizione (il bot non espone il P&L live via state)
-    const posPnl = d.position_pnl_pct ?? null;
-    updateSlBar(posPnl);
-    $('val-pos-pnl').textContent = posPnl != null ? fmtPct(posPnl) : '—';
-    $('val-pos-pnl').style.color = posPnl == null ? 'var(--muted)' : posPnl >= 0 ? 'var(--green)' : 'var(--red)';
-    $('val-partial-tag').textContent = d.partial_profit_taken ? '✅ Parziale eseguito' : '';
-    $('val-partial-tag').style.color = 'var(--purple)';
-
-    // Risk tag
-    const risk = d.bridgewater_risk || 'SAFE';
-    const rt = $('risk-tag');
-    rt.textContent = risk;
-    rt.className = 'risk-tag ' + (risk === 'HIGH_RISK' ? 'high' : risk === 'ELEVATED' ? 'elevated' : 'safe');
-
-    // AI Score ring
-    setScoreRing(d.ai_score || 0);
+    // Contagiri + verdetto
+    setTach(d.ai_score || 0);
     setVerdict(d.institutional_verdict);
 
-    // AI details
-    const det = d.ai_details || {};
-    $('ai-rsi').textContent  = det.rsi != null ? det.rsi.toFixed(1) : '—';
-    $('ai-vol').textContent  = det.volume_ratio != null ? det.volume_ratio.toFixed(2) + 'x' : '—';
-    $('ai-macd').textContent = det.macd_cross != null ? (det.macd_cross ? '✅ Sì' : '❌ No') : '—';
-    $('ai-best').textContent = det.best_asset || '—';
+    // Marcia + telemetria posizione
+    setGear(asset);
+    $('tel-entry').textContent = d.entry_price ? fmt$(d.entry_price) : '—';
+    const telPnl = $('tel-pnl');
+    telPnl.textContent = posPnl != null ? fmtPct(posPnl) : '—';
+    telPnl.className = 'tele-v ' + (posPnl == null ? 'mut' : posPnl >= 0 ? 'pos' : 'neg');
+    // partial_profit_done è un dict {symbol: true} lato bot
+    const partialDone = !!(d.partial_profit_done && d.partial_profit_done[asset]) || !!d.partial_profit_taken;
+    const telPart = $('tel-partial');
+    telPart.textContent = partialDone ? '✔ eseguito' : 'in attesa';
+    telPart.className = 'tele-v ' + (partialDone ? 'pos' : 'mut');
+    setSlCursor(posPnl);
 
-    // Radar
-    renderRadar(d.assets_data, asset);
+    // Fuel = cash
+    $('fuel-cash').textContent = fmt$(cash);
+    $('fuel-invested').textContent = fmt$(invested);
+    const cashPct = equity > 0 ? cash / equity * 100 : 0;
+    $('fuel-pct').textContent = equity > 0 ? `${cashPct.toFixed(1)}% del portafoglio` : '—';
+    $('fuel-fill').style.width = Math.max(0, Math.min(100, cashPct)) + '%';
+    const mtc = d.minutes_to_close;
+    $('fuel-close').textContent = (isOpen && mtc > 0)
+      ? (mtc >= 60 ? `${Math.floor(mtc/60)}h ${mtc%60}m` : `${mtc}m`) : '—';
+
+    // Trip computer LCD
+    $('lcd-equity').textContent = fmt$(equity);
+    const dailyStart = d.daily_start_equity || equity;
+    const dailyPnl   = equity - dailyStart;
+    const dailyPct   = dailyStart > 0 ? dailyPnl / dailyStart * 100 : 0;
+    $('lcd-day').textContent = fmtPct(dailyPct);
+    $('lcd-day-sub').textContent = `${dailyPnl >= 0 ? '+' : ''}${fmt$(Math.abs(dailyPnl)).replace('$', dailyPnl >= 0 ? '$' : '-$')} dalla campanella`;
+    $('lcd-day-box').classList.toggle('alert', dailyPnl < 0);
+    $('lcd-pos').textContent = posPnl != null ? fmtPct(posPnl) : '—';
+    $('lcd-pos-sub').textContent = posPnl != null ? `su ${asset}` : 'non a mercato';
+    $('lcd-pos-box').classList.toggle('alert', posPnl != null && posPnl < 0);
+    $('lcd-ops').textContent = d.operations_today || 0;
+
+    // Grafico + risk flag
+    $('chart-ticker').textContent = asset;
+    updateChart(asset);
+    const rf = $('risk-flag');
+    rf.textContent = risk;
+    rf.className = 'risk-flag ' + (risk === 'HIGH_RISK' ? 'high' : risk === 'ELEVATED' ? 'elevated' : 'safe');
+
+    // Pit board + telemetria
+    renderPit(d.assets_data, asset);
     renderLog(d.log);
 
-  } catch(e) {
-    $('conn-dot').classList.add('red');
-    $('conn-text').textContent = 'Offline';
+  } catch(e){
+    setLamp('lamp-conn', 'red', 'lamp-conn-txt', 'OFFLINE');
   }
 }
 
