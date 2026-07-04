@@ -17,11 +17,15 @@ class AlphaIntelligence:
 
     def __init__(self, hist_data: pd.DataFrame):
         """
-        hist_data: DataFrame da yfinance con colonne Close, Volume, High, Low.
-        Deve avere almeno 30 righe per calcoli affidabili.
+        hist_data: DataFrame con colonne Open/High/Low/Close/Volume (barre daily Alpaca).
+
+        FIX 1.5: la soglia minima di validità sale da 15 a 50 righe. Con 15
+        righe la SMA50 (serve per above_sma50) e le Bollinger Bands (servono
+        20) erano NaN e finivano comunque nel punteggio/summary, corrompendo
+        lo score in silenzio. 50 righe coprono l'indicatore più esigente.
         """
         self.data    = hist_data.copy()
-        self.valid   = len(self.data) >= 15  # Minimo dati necessari
+        self.valid   = len(self.data) >= 50  # copre SMA50 (50) e Bollinger (20)
         self._score  = None  # Cache del punteggio composito
         self._errors = []
 
@@ -42,11 +46,26 @@ class AlphaIntelligence:
         low    = df['Low'].squeeze()    if 'Low'    in df.columns else close
 
         # --- RSI 14 ---
+        # FIX 1.5: quando non ci sono candele negative (loss=0) l'RS diventa
+        # NaN e finiva nel ramo 'else' del punteggio (-15, penalità da
+        # ipercomprato estremo) proprio sul trend più forte possibile.
+        # RSI=100 è il valore matematicamente corretto (nessuna perdita).
+        # Se anche il guadagno è 0 (prezzo piatto), RSI=50 (neutro).
         delta = close.diff()
         gain  = delta.clip(lower=0).rolling(14).mean()
         loss  = (-delta.clip(upper=0)).rolling(14).mean()
         rs    = gain / loss.replace(0, np.nan)
-        self.rsi = (100 - 100 / (1 + rs)).iloc[-1]
+        rsi_series = 100 - 100 / (1 + rs)
+        last_gain, last_loss = gain.iloc[-1], loss.iloc[-1]
+        if pd.isna(rsi_series.iloc[-1]):
+            if last_loss == 0 and last_gain > 0:
+                self.rsi = 100.0
+            elif last_loss == 0 and last_gain == 0:
+                self.rsi = 50.0
+            else:
+                self.rsi = np.nan  # dati davvero insufficienti (es. warm-up EMA)
+        else:
+            self.rsi = rsi_series.iloc[-1]
 
         # --- MACD (12, 26, 9) ---
         ema12      = close.ewm(span=12, adjust=False).mean()
@@ -59,8 +78,10 @@ class AlphaIntelligence:
         self.macd_signal  = signal.iloc[-1]
 
         # --- Momentum 5D e 10D ---
-        self.momentum_5d  = ((close.iloc[-1] - close.iloc[-5])  / close.iloc[-5])  * 100 if len(close) >= 5  else 0
-        self.momentum_10d = ((close.iloc[-1] - close.iloc[-10]) / close.iloc[-10]) * 100 if len(close) >= 10 else 0
+        # FIX 1.5: "5D" deve coprire 5 intervalli (oggi vs 5 sedute fa),
+        # non 4. iloc[-1] vs iloc[-5] misura solo 4 intervalli.
+        self.momentum_5d  = ((close.iloc[-1] - close.iloc[-6])  / close.iloc[-6])  * 100 if len(close) >= 6  else 0
+        self.momentum_10d = ((close.iloc[-1] - close.iloc[-11]) / close.iloc[-11]) * 100 if len(close) >= 11 else 0
 
         # --- ATR 14 (volatilità) ---
         tr = pd.DataFrame({
@@ -87,8 +108,12 @@ class AlphaIntelligence:
             self.volume_ratio = 1.0
 
         # --- Prezzo vs SMA50 ---
+        # FIX 1.5: il vecchio check ternario era invertito e restituiva True
+        # (bonus concesso) proprio quando la SMA50 è NaN per dati insufficienti.
+        # Con dati scarsi il trend rialzista NON è confermato: default a False.
         sma50 = close.rolling(50).mean()
-        self.above_sma50 = close.iloc[-1] > sma50.iloc[-1] if not sma50.iloc[-1] != sma50.iloc[-1] else True
+        sma50_last = sma50.iloc[-1]
+        self.above_sma50 = bool(close.iloc[-1] > sma50_last) if pd.notna(sma50_last) else False
 
         self._score = self._compute_score()
 
@@ -100,7 +125,8 @@ class AlphaIntelligence:
         score = 0
 
         # RSI: zona di forza vs ipervenduto/ipercomprato
-        if   self.rsi < 30:   score += 20   # ipervenduto: potenziale rimbalzo aggressivo
+        if   pd.isna(self.rsi):   score += 0    # dati insufficienti: contributo neutro
+        elif self.rsi < 30:   score += 20   # ipervenduto: potenziale rimbalzo aggressivo
         elif self.rsi < 45:   score += 10   # momentum debole ma non esaurito
         elif self.rsi < 65:   score += 25   # zona ottimale di forza
         elif self.rsi < 75:   score += 5    # ipercomprato moderato

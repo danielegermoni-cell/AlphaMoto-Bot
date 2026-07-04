@@ -1,5 +1,5 @@
 """
-AlphaMoto v6.0 — Refactor architetturale.
+AlphaMoto v6.1 — Refactor architetturale.
 
 I 4 pilastri implementati:
 
@@ -88,7 +88,7 @@ class StateStore:
     """
 
     DEFAULTS = {
-        "log":                   ["🚀 AlphaMoto v6.0 Avviato"],
+        "log":                   ["🚀 AlphaMoto v6.1 Avviato"],
         "assets_data":           [],
         "total_equity":          0.0,
         "cash":                  0.0,
@@ -195,7 +195,7 @@ def send_telegram(msg):
     if bot is None:
         return
     try:
-        bot.send_message(CHAT_ID, f"🏍️ *AlphaMoto v6.0*\n\n{msg}", parse_mode='Markdown')
+        bot.send_message(CHAT_ID, f"🏍️ *AlphaMoto v6.1*\n\n{msg}", parse_mode='Markdown')
     except Exception as e:
         print(f"Errore Telegram: {e}")
 
@@ -362,10 +362,58 @@ def reset_daily_state(equity):
     }, log_msg=f"📅 Nuova sessione — Equity di partenza: ${equity:,.2f}")
 
 
-def check_circuit_breaker(equity):
+# Throttle allarmi di liquidazione fallita: max 1 ogni 10 minuti (no spam).
+_cb_fail_alarm_ts = 0.0
+
+
+def _liquidate_for_circuit_breaker(active_ticker):
+    """
+    FASE 1.3 — Liquida la posizione sotto trade_lock quando il CB scatta.
+    Ritorna True se siamo liquidi (o lo eravamo già).
+    """
+    global _cb_fail_alarm_ts
+    if not active_ticker:
+        return True
+
+    ok = False
+    if trade_lock.acquire(timeout=90):
+        try:
+            ok = broker.sell_all_asset(active_ticker)
+        finally:
+            trade_lock.release()
+
+    if ok:
+        store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None},
+                     log_msg=f"🔴 CB: posizione {active_ticker} liquidata")
+        store.increment("operations_today")
+        send_telegram(
+            f"🔴 *CIRCUIT BREAKER*\n\nPosizione `{active_ticker}` LIQUIDATA.\n"
+            f"Portafoglio in sicurezza (LIQUIDO) fino al /reset\\_cb."
+        )
+    else:
+        now = time.time()
+        if now - _cb_fail_alarm_ts > 600:
+            _cb_fail_alarm_ts = now
+            send_telegram(
+                f"🆘 *CRITICO: LIQUIDAZIONE CB FALLITA*\n\nCircuit breaker attivo ma la vendita di "
+                f"`{active_ticker}` è FALLITA.\n⚠️ INTERVENTO MANUALE RICHIESTO su Alpaca.\n"
+                f"Ritenterò a ogni ciclo."
+            )
+    return ok
+
+
+def check_circuit_breaker(equity, active_ticker):
+    """
+    Ritorna True se il trading è sospeso.
+    FASE 1.3: la violazione del limite giornaliero LIQUIDA la posizione, non la
+    lascia esposta al mercato. Se la vendita fallisce, ritenta a ogni ciclo.
+    """
     s = store.snapshot()
     if s["circuit_breaker"]:
+        # CB già attivo: se siamo ancora (o di nuovo) investiti, ritenta la liquidazione.
+        _liquidate_for_circuit_breaker(active_ticker)
         return True
+
     daily_start = s.get("daily_start_equity", 0)
     if daily_start > 0:
         daily_pct = ((equity - daily_start) / daily_start) * 100
@@ -374,29 +422,57 @@ def check_circuit_breaker(equity):
             send_telegram(
                 f"🔴 *CIRCUIT BREAKER ATTIVATO*\n\n"
                 f"Perdita giornaliera: `{daily_pct:.2f}%`\nLimite: `{DAILY_LOSS_LIMIT_PCT}%`\n\n"
-                f"Trading sospeso fino al /reset\\_cb manuale."
+                f"Liquidazione posizione in corso — trading sospeso fino al /reset\\_cb manuale."
             )
+            _liquidate_for_circuit_breaker(active_ticker)
             return True
     return False
 
 
-def check_stop_loss(active_ticker, pos_details):
-    """P&L letto da Alpaca (pos_details). Ritorna True se ha venduto."""
-    if pos_details is None:
-        return False
-    pnl_pct = pos_details["unrealized_plpc"]
-    if pnl_pct > STOP_LOSS_PCT:
+def resolve_position_pnl(active_ticker, pos_details):
+    """
+    FASE 1.2 — Il P&L per lo stop-loss non deve MAI mancare in silenzio.
+    Ritorna (pnl_pct, degraded):
+      - pnl reale da Alpaca (pos_details)            → (pnl, False)
+      - STIMA da ultimo prezzo + entry_price cache   → (pnl, True)
+      - completamente ciechi                          → (None, True)
+    """
+    if pos_details is not None:
+        return pos_details["unrealized_plpc"], False
+
+    # Modalità degradata: get_position ha fallito, tentiamo una stima
+    # indipendente (endpoint market-data diverso da quello posizioni).
+    entry  = store.get("entry_price", 0.0)
+    prices = broker.get_latest_prices([active_ticker]) or {}
+    last   = prices.get(active_ticker)
+    if entry and entry > 0 and last:
+        return ((last - entry) / entry) * 100, True
+    return None, True
+
+
+def check_stop_loss(active_ticker, pnl_pct, degraded=False):
+    """
+    Stop-loss su P&L reale o stimato (degraded). Ritorna True se ha venduto.
+    FASE 1.2: una vendita fallita genera un allarme CRITICO, mai silenzio.
+    """
+    if pnl_pct is None or pnl_pct > STOP_LOSS_PCT:
         return False
 
+    degraded_note = "\n⚠️ _P&L STIMATO — endpoint posizioni Alpaca non disponibile_" if degraded else ""
     send_telegram(
         f"🛑 *STOP-LOSS ESEGUITO*\n\nAsset: `{active_ticker}`\n"
-        f"Perdita posizione: `{pnl_pct:.2f}%`\nSoglia: `{STOP_LOSS_PCT}%`\n\nLiquidazione in corso..."
+        f"Perdita posizione: `{pnl_pct:.2f}%`\nSoglia: `{STOP_LOSS_PCT}%`{degraded_note}\n\nLiquidazione in corso..."
     )
     with trade_lock:
         success = broker.sell_all_asset(active_ticker)
     if success:
         store.update({"current_asset": "LIQUIDO", "entry_price": 0.0, "position_pnl_pct": None})
         store.increment("operations_today")
+    else:
+        send_telegram(
+            f"🆘 *CRITICO: STOP-LOSS FALLITO*\n\nLa vendita di `{active_ticker}` NON è riuscita.\n"
+            f"⚠️ INTERVENTO MANUALE RICHIESTO su Alpaca (o usa /panic).\nRitenterò al prossimo ciclo."
+        )
     return success
 
 
@@ -480,7 +556,7 @@ def execute_swap(active_ticker, target, reason_log, telegram_msg):
 
 def update_logic():
     send_telegram(
-        "✅ *Motore v6.0 Online*\n\n"
+        "✅ *Motore v6.1 Online*\n\n"
         "🎯 Modalità: Aggressiva\n"
         f"🛑 Stop-Loss attivo: {STOP_LOSS_PCT}%\n"
         f"💰 Take Profit parziale: +{PARTIAL_PROFIT_PCT}%\n"
@@ -493,6 +569,8 @@ def update_logic():
     last_report_time   = time.time()
     last_analysis_time = 0.0
     anomaly_notified   = False
+    blind_alarm_sent    = False   # Fase 1.2: dedup allarme "volo cieco"
+    degraded_alarm_sent = False   # Fase 1.2: dedup allarme P&L stimato
 
     while True:
         try:
@@ -545,8 +623,8 @@ def update_logic():
                 # Riavvio a mercato aperto senza baseline giornaliera
                 reset_daily_state(equity)
 
-            # ── 4. CIRCUIT BREAKER ───────────────────────────────────────
-            if check_circuit_breaker(equity):
+            # ── 4. CIRCUIT BREAKER (con liquidazione, Fase 1.3) ──────────
+            if check_circuit_breaker(equity, active_ticker):
                 time.sleep(60)
                 continue
 
@@ -564,12 +642,46 @@ def update_logic():
                 )
                 last_report_time = now
 
-            # ── 6. STOP-LOSS / TAKE PROFIT (ogni minuto, P&L da Alpaca) ──
+            # ── 6. STOP-LOSS / TAKE PROFIT (fail-safe, Fase 1.2) ─────────
             if active_ticker:
-                if check_stop_loss(active_ticker, pos_details):
+                pnl_pct, degraded = resolve_position_pnl(active_ticker, pos_details)
+
+                if pnl_pct is None:
+                    # VOLO CIECO: né P&L reale né stima disponibili.
+                    if not blind_alarm_sent:
+                        blind_alarm_sent = True
+                        send_telegram(
+                            f"🆘 *ALLARME CRITICO: VOLO CIECO*\n\nPosizione `{active_ticker}` aperta ma "
+                            f"IMPOSSIBILE leggere il P&L da Alpaca (posizioni E market data ko).\n"
+                            f"🛑 Lo stop-loss NON è verificabile.\n"
+                            f"Retry aggressivo ogni 15s. Se persiste, valuta /panic."
+                        )
+                    time.sleep(15)   # retry aggressivo: salta analisi e trading
+                    continue
+
+                if blind_alarm_sent:
+                    blind_alarm_sent = False
+                    send_telegram(f"✅ Dati P&L ripristinati per `{active_ticker}`. Stop-loss di nuovo operativo.")
+
+                if degraded:
+                    # Stima disponibile: stop-loss resta armato, ma avvisa (una volta).
+                    store.update({"position_pnl_pct": round(pnl_pct, 2)})
+                    if not degraded_alarm_sent:
+                        degraded_alarm_sent = True
+                        send_telegram(
+                            f"⚠️ P&L di `{active_ticker}` in modalità STIMATA "
+                            f"(entry cache + ultimo prezzo). Stop-loss comunque attivo."
+                        )
+                else:
+                    degraded_alarm_sent = False
+
+                if check_stop_loss(active_ticker, pnl_pct, degraded):
                     time.sleep(10)
                     continue
-                check_partial_profit(active_ticker, pos_details)
+                if not degraded:
+                    # Il take-profit parziale richiede dati posizione REALI:
+                    # in modalità stimata è più prudente non vendere frazioni.
+                    check_partial_profit(active_ticker, pos_details)
 
             # ── 7. ANALISI (ogni ANALYSIS_INTERVAL) ──────────────────────
             if last_analysis_time > 0 and (now - last_analysis_time) < ANALYSIS_INTERVAL:
@@ -702,5 +814,5 @@ if __name__ == '__main__':
     threading.Thread(target=update_logic, daemon=True).start()
     if bot:
         threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
-    print("🚀 AlphaMoto Core v6.0 avviato su http://0.0.0.0:5000")
+    print("🚀 AlphaMoto Core v6.1 avviato su http://0.0.0.0:5000")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)

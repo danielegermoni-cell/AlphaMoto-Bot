@@ -278,17 +278,36 @@ class AlpacaBroker:
             print(f"❌ Impossibile acquisire order lock per vendita parziale {symbol}.")
             return False
         try:
-            pos = self.api.get_position(symbol)
-            qty = float(pos.qty)
-            qty_to_sell = max(1, int(qty * percentage))
+            pos   = self.api.get_position(symbol)
+            qty   = float(pos.qty)
+            price = float(pos.current_price)
+
+            # FIX FASE 1.4: quantità FRAZIONARIA (Alpaca accetta fino a 9 decimali).
+            # Il vecchio max(1, int(qty * pct)) con qty frazionaria (es. 0.8 shares
+            # da un ordine notional) produceva max(1, 0) = 1 → vendita di PIÙ di
+            # quanto posseduto.
+            qty_to_sell = round(qty * percentage, 9)
+
+            if qty_to_sell <= 0 or qty_to_sell > qty:
+                print(f"⚠️ Vendita parziale {symbol} saltata: qty non valida ({qty_to_sell}/{qty}).")
+                return False
+
+            # Se il residuo varrebbe meno di ~1$, Alpaca può rifiutare ordini
+            # futuri su quella briciola: meglio chiudere tutto.
+            remainder_value = (qty - qty_to_sell) * price
+            if remainder_value < 1.0:
+                order = self.api.close_position(symbol)
+                print(f"📉 VENDITA PARZIALE promossa a TOTALE (residuo ~${remainder_value:.2f}): {symbol} (id: {order.id})")
+                return self._wait_for_fill(order.id)
+
             order = self.api.submit_order(
                 symbol=symbol,
-                qty=qty_to_sell,
+                qty=str(qty_to_sell),      # stringa: preserva i decimali frazionari
                 side='sell',
                 type='market',
-                time_in_force='day'
+                time_in_force='day'        # obbligatorio 'day' per ordini frazionari
             )
-            print(f"📉 VENDITA PARZIALE ({percentage*100:.0f}%): {symbol} — {qty_to_sell} shares")
+            print(f"📉 VENDITA PARZIALE ({percentage*100:.0f}%): {symbol} — {qty_to_sell} shares (id: {order.id})")
             return self._wait_for_fill(order.id)
         except Exception as e:
             print(f"❌ Errore vendita parziale {symbol}: {e}")
