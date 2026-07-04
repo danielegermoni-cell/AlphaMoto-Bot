@@ -103,6 +103,7 @@ class StateStore:
         "circuit_breaker":       False,
         "operations_today":      0,
         "partial_profit_done":   {},      # {symbol: True} — dedup prese di profitto
+        "cold_start_hold":       False,   # Fase 3: sospensione nuovi ingressi/swap dopo cold-start mid-day
     }
 
     def __init__(self, path):
@@ -229,6 +230,8 @@ if bot:
         # is_market_open è cachato nel broker: nessun burst di chiamate REST
         status_icon = ("🔴 CIRCUIT BREAKER ATTIVO" if s["circuit_breaker"]
                        else ("🟢 Operativo" if broker.is_market_open() else "🌙 Standby"))
+        hold_note = ("\n🧊 *Nuovi ingressi/swap SOSPESI* (cold-start) — usa /confirm\\_resume"
+                     if s.get("cold_start_hold") else "")
         msg = (
             f"📊 *REPORT LIVE*\n\n"
             f"💰 Capitale: `${equity:,.2f}`\n"
@@ -239,7 +242,7 @@ if bot:
             f"⚡ Verdetto: `{s['institutional_verdict']}`\n"
             f"⚠️ Rischio: `{s['bridgewater_risk']}`\n\n"
             f"🔄 Operazioni oggi: `{s['operations_today']}`\n"
-            f"🕒 Stato: {status_icon}\n"
+            f"🕒 Stato: {status_icon}{hold_note}\n"
             f"⏰ Aggiornato: `{time.strftime('%H:%M:%S')}`"
         )
         bot.reply_to(message, msg, parse_mode='Markdown')
@@ -299,6 +302,23 @@ if bot:
         store.update({"circuit_breaker": False}, log_msg="🔓 Circuit breaker resettato manualmente")
         bot.reply_to(message, "✅ Circuit breaker disattivato. Trading ripreso.", parse_mode='Markdown')
 
+    @bot.message_handler(commands=['confirm_resume'])
+    def handle_confirm_resume(message):
+        """
+        FASE 3 — Sblocca nuovi ingressi/swap dopo un cold-start a mercato
+        aperto. Stop-loss e take-profit non sono mai stati toccati da questo
+        hold: qui si conferma solo di aver verificato manualmente lo stato
+        del portafoglio prima di lasciare che il bot apra nuove posizioni.
+        """
+        if not _check_auth(message):
+            return
+        if not store.get("cold_start_hold", False):
+            bot.reply_to(message, "ℹ️ Nessuna sospensione da cold-start attualmente attiva.", parse_mode='Markdown')
+            return
+        store.update({"cold_start_hold": False},
+                     log_msg="✅ Cold-start hold rimosso manualmente via /confirm_resume")
+        bot.reply_to(message, "✅ Confermato — nuovi ingressi/swap riabilitati.", parse_mode='Markdown')
+
 # ══════════════════════════════════════════════════════════════════════
 # ANALISI DI MERCATO — dati nativi Alpaca (yfinance eliminato)
 # ══════════════════════════════════════════════════════════════════════
@@ -317,7 +337,7 @@ def analyze_assets():
     for ticker in ASSETS:
         try:
             hist = bars_map.get(ticker)
-            if hist is None or len(hist) < 15:
+            if hist is None or len(hist) < 50:   # allineato alla soglia AlphaIntelligence (SMA50)
                 continue
 
             closes = hist['Close']
@@ -354,12 +374,17 @@ def analyze_assets():
 # ══════════════════════════════════════════════════════════════════════
 
 def reset_daily_state(equity):
+    """
+    Reset a inizio giornata. NOTA (Fase 2): daily_start_equity qui è solo un
+    seed/cache per il fallback degradato e la dashboard — l'unica fonte
+    autorevole per il circuit breaker è resolve_daily_start_equity() (Alpaca).
+    """
     store.update({
         "daily_start_equity":  equity,
         "circuit_breaker":     False,
         "operations_today":    0,
         "partial_profit_done": {},
-    }, log_msg=f"📅 Nuova sessione — Equity di partenza: ${equity:,.2f}")
+    }, log_msg=f"📅 Nuova sessione — Equity di partenza (seed locale): ${equity:,.2f}")
 
 
 # Throttle allarmi di liquidazione fallita: max 1 ogni 10 minuti (no spam).
@@ -402,11 +427,51 @@ def _liquidate_for_circuit_breaker(active_ticker):
     return ok
 
 
+# Throttle allarme "baseline giornaliera irraggiungibile" (no spam).
+_daily_baseline_alarm_ts = 0.0
+
+
+def resolve_daily_start_equity():
+    """
+    FASE 2 (estensione Source-of-Truth, pre-Fase 3) — la baseline per il
+    circuit breaker giornaliero (-10%) viene SEMPRE richiesta ad Alpaca
+    (get_portfolio_history → base_value), MAI fidandosi di state.json:
+    un redeploy Render (o qualunque riavvio) cancella il filesystem effimero
+    e un valore stantio o azzerato falserebbe silenziosamente il calcolo.
+
+    Ritorna (valore, degraded):
+      - (base_value reale da Alpaca, False)               → caso normale
+      - (ultimo valore noto in cache locale, True)         → Alpaca irraggiungibile
+      - (None, True)                                       → nessun dato disponibile
+    """
+    global _daily_baseline_alarm_ts
+    val = broker.get_daily_start_equity()
+    if val is not None and val > 0:
+        store.update({"daily_start_equity": round(val, 2)})  # cache per il solo fallback/display
+        return val, False
+
+    cached = store.get("daily_start_equity", 0.0)
+    if cached and cached > 0:
+        return cached, True
+
+    now = time.time()
+    if now - _daily_baseline_alarm_ts > 600:
+        _daily_baseline_alarm_ts = now
+        send_telegram(
+            "⚠️ *ATTENZIONE*\n\nImpossibile determinare la baseline di equity giornaliera "
+            "(né da Alpaca né da cache locale).\nIl circuit breaker giornaliero NON è "
+            "verificabile in questo ciclo — resterà silenzioso finché Alpaca non risponde."
+        )
+    return None, True
+
+
 def check_circuit_breaker(equity, active_ticker):
     """
     Ritorna True se il trading è sospeso.
     FASE 1.3: la violazione del limite giornaliero LIQUIDA la posizione, non la
     lascia esposta al mercato. Se la vendita fallisce, ritenta a ogni ciclo.
+    FASE 2: la baseline giornaliera è risolta da Alpaca (resolve_daily_start_equity),
+    mai da uno state.json che un redeploy può azzerare.
     """
     s = store.snapshot()
     if s["circuit_breaker"]:
@@ -414,18 +479,23 @@ def check_circuit_breaker(equity, active_ticker):
         _liquidate_for_circuit_breaker(active_ticker)
         return True
 
-    daily_start = s.get("daily_start_equity", 0)
-    if daily_start > 0:
-        daily_pct = ((equity - daily_start) / daily_start) * 100
-        if daily_pct <= DAILY_LOSS_LIMIT_PCT:
-            store.update({"circuit_breaker": True})
-            send_telegram(
-                f"🔴 *CIRCUIT BREAKER ATTIVATO*\n\n"
-                f"Perdita giornaliera: `{daily_pct:.2f}%`\nLimite: `{DAILY_LOSS_LIMIT_PCT}%`\n\n"
-                f"Liquidazione posizione in corso — trading sospeso fino al /reset\\_cb manuale."
-            )
-            _liquidate_for_circuit_breaker(active_ticker)
-            return True
+    daily_start, degraded = resolve_daily_start_equity()
+    if daily_start is None:
+        # Allarme già inviato da resolve_daily_start_equity: non possiamo
+        # decidere in modo affidabile, non blocchiamo un trading altrimenti sano.
+        return False
+
+    daily_pct = ((equity - daily_start) / daily_start) * 100
+    if daily_pct <= DAILY_LOSS_LIMIT_PCT:
+        store.update({"circuit_breaker": True})
+        degraded_note = "\n⚠️ _baseline da cache locale (Alpaca non raggiungibile)_" if degraded else ""
+        send_telegram(
+            f"🔴 *CIRCUIT BREAKER ATTIVATO*\n\n"
+            f"Perdita giornaliera: `{daily_pct:.2f}%`\nLimite: `{DAILY_LOSS_LIMIT_PCT}%`{degraded_note}\n\n"
+            f"Liquidazione posizione in corso — trading sospeso fino al /reset\\_cb manuale."
+        )
+        _liquidate_for_circuit_breaker(active_ticker)
+        return True
     return False
 
 
@@ -572,6 +642,33 @@ def update_logic():
     blind_alarm_sent    = False   # Fase 1.2: dedup allarme "volo cieco"
     degraded_alarm_sent = False   # Fase 1.2: dedup allarme P&L stimato
 
+    # ── FASE 3 — Cold-start safety net ───────────────────────────────────
+    # Se il processo (ri)parte con il mercato GIÀ aperto (tipico di un
+    # redeploy Render mid-day), il ramo "APERTURA / AVVIO" più sotto non
+    # scatterà mai (richiede una transizione chiuso→aperto), quindi
+    # reset_daily_state() non viene chiamato: è proprio lo scenario in cui
+    # state.json potrebbe essere stato azzerato dal filesystem effimero e
+    # circuit_breaker potrebbe mentire (falso False). Non blocchiamo
+    # stop-loss/take-profit (leggono Alpaca in tempo reale, sono affidabili
+    # comunque): sospendiamo SOLO nuovi ingressi/swap finché l'operatore
+    # non conferma manualmente con /confirm_resume.
+    if not market_was_closed:
+        store.update(
+            {"cold_start_hold": True},
+            log_msg="🧊 Cold-start a mercato aperto: nuovi ingressi/swap sospesi in attesa di /confirm_resume"
+        )
+        send_telegram(
+            "🧊 *AVVIO A MERCATO APERTO*\n\n"
+            "Il bot è ripartito con il mercato già aperto (probabile redeploy).\n"
+            "Lo stato locale, circuit breaker incluso, potrebbe essere stato azzerato.\n\n"
+            "🛡️ Stop-loss e take-profit restano ATTIVI (dati Alpaca in tempo reale).\n"
+            "⛔ Nuovi ingressi/swap SOSPESI.\n\n"
+            "Verifica lo stato del portafoglio (/status, controlla anche Alpaca "
+            "direttamente) e poi invia /confirm\\_resume per riabilitare il trading."
+        )
+    else:
+        store.update({"cold_start_hold": False})
+
     while True:
         try:
             # ── 1. SYNC DA ALPACA (Source of Truth, ogni ciclo) ──────────
@@ -619,9 +716,12 @@ def update_logic():
                 )
                 market_was_closed = False
                 last_report_time  = time.time()
-            elif store.get("daily_start_equity", 0.0) <= 0.0:
-                # Riavvio a mercato aperto senza baseline giornaliera
-                reset_daily_state(equity)
+            # NOTA (Fase 2): rimosso il vecchio ramo "riavvio senza baseline
+            # giornaliera → reset_daily_state(equity)". Era una toppa per lo
+            # stesso problema che risolviamo ora: azzerava anche circuit_breaker
+            # ad ogni riavvio Render mid-day con state.json mancante. La baseline
+            # ora arriva sempre da Alpaca via resolve_daily_start_equity(): un
+            # riavvio non richiede più nessun reset locale a mercato aperto.
 
             # ── 4. CIRCUIT BREAKER (con liquidazione, Fase 1.3) ──────────
             if check_circuit_breaker(equity, active_ticker):
@@ -714,9 +814,15 @@ def update_logic():
             })
 
             # ── 8. LOGICA DI TRADING ─────────────────────────────────────
+            # FASE 3: durante un cold-start hold, l'analisi sopra continua
+            # (dashboard/radar restano aggiornati) ma nessun nuovo ordine di
+            # ingresso o swap parte finché l'operatore non conferma.
+            cold_hold = store.get("cold_start_hold", False)
 
             # CASO A: liquidi → ingresso
-            if active_ticker is None and cash > 50.0:
+            if cold_hold:
+                pass
+            elif active_ticker is None and cash > 50.0:
                 if best["verdict"] in ("STRONG_BUY", "BUY", "WEAK_BUY") and best["risk"] != "HIGH_RISK":
                     execute_entry(best, cash)
 
@@ -799,6 +905,13 @@ def get_state():
     snap["invested"]         = snap["wallet"] - snap.get("cash", 0.0)
     snap["market_open"]      = broker.is_market_open()      # clock cachato 10s
     snap["minutes_to_close"] = broker.minutes_to_close()
+
+    # Fase 2: baseline giornaliera risolta live (Alpaca, cache 60s) — mai il
+    # valore grezzo di state.json, che un redeploy può aver azzerato.
+    daily_start, _degraded = resolve_daily_start_equity()
+    if daily_start:
+        snap["daily_start_equity"] = round(daily_start, 2)
+
     return jsonify(snap)
 
 
